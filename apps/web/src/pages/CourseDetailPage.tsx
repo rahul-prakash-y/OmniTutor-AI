@@ -5,34 +5,99 @@ import { Button } from '../components/ui/Button';
 import { Badge } from '../components/ui/Badge';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '../components/ui/Tabs';
 import { EmptyState } from '../components/ui/EmptyState';
+import { MaterialUploader } from '../components/course/MaterialUploader';
+import { ProcessingTimeline } from '../components/course/ProcessingTimeline';
+import { MaterialPreviewModal } from '../components/course/MaterialPreviewModal';
+import { COURSES_FIXTURE } from '../fixtures/courses';
+import { apiClient } from '../services/apiClient';
 import { toast } from '../stores/useToastStore';
-import { COURSES_FIXTURE, type LessonFixture } from '../fixtures/courses';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Clock,
   Star,
-  Users,
   CheckCircle2,
   Circle,
   PlayCircle,
-  ChevronDown,
-  ChevronUp,
   ArrowLeft,
   Sparkles,
+  FileText,
+  FileSpreadsheet,
+  FileCode,
+  FileAudio,
+  FileVideo,
+  Trash2,
+  Eye,
+  Layers,
+  FolderOpen,
 } from 'lucide-react';
+import type { Material, SourceType } from '@omnitutor/shared';
 
 export const CourseDetailPage: React.FC = () => {
-  const { courseId } = useParams<{ courseId: string }>();
+  const { courseId = '' } = useParams<{ courseId: string }>();
   const navigate = useNavigate();
-  const [activeTab, setActiveTab] = useState('syllabus');
-  const [expandedModules, setExpandedModules] = useState<Record<string, boolean>>({
-    m1: true,
-    m2: true,
-    m3: true,
+  const queryClient = useQueryClient();
+
+  const [activeTab, setActiveTab] = useState('materials');
+  const [previewMaterial, setPreviewMaterial] = useState<Material | null>(null);
+  const [isPreviewOpen, setIsPreviewOpen] = useState(false);
+
+  // 1. Fetch Course from API
+  const { data: apiCourse, isLoading: isCourseLoading } = useQuery({
+    queryKey: ['course', courseId],
+    queryFn: async () => {
+      const res = await apiClient.getCourse(courseId);
+      if (res.success && res.data) {
+        return res.data;
+      }
+      return null;
+    },
+    enabled: Boolean(courseId),
   });
 
-  const course = COURSES_FIXTURE.find((c) => c.id === courseId) || COURSES_FIXTURE[0];
+  // Fallback to fixture course if not an API course
+  const fixtureCourse = COURSES_FIXTURE.find((c) => c.id === courseId);
 
-  if (!course) {
+  // 2. Fetch Materials from API
+  const { data: materialsData, refetch: refetchMaterials } = useQuery({
+    queryKey: ['materials', courseId],
+    queryFn: async () => {
+      const res = await apiClient.getMaterials(courseId);
+      return res.success && res.data ? res.data : [];
+    },
+    enabled: Boolean(courseId),
+    refetchInterval: (query) => {
+      // Auto-refresh every 2.5s if any material is in 'queued' or 'processing'
+      const materials = query.state.data as Material[] | undefined;
+      const hasPending = materials?.some((m) =>
+        ['queued', 'processing', 'uploaded'].includes(m.status)
+      );
+      return hasPending ? 2500 : false;
+    },
+  });
+
+  const materials: Material[] = materialsData || [];
+
+  // Delete material mutation
+  const deleteMaterialMutation = useMutation({
+    mutationFn: async (materialId: string) => {
+      return await apiClient.deleteMaterial(courseId, materialId);
+    },
+    onSuccess: () => {
+      toast.success('Material deleted.', 'Library Updated');
+      queryClient.invalidateQueries({ queryKey: ['materials', courseId] });
+      queryClient.invalidateQueries({ queryKey: ['course', courseId] });
+    },
+  });
+
+  if (isCourseLoading) {
+    return (
+      <div className="py-24 text-center text-xs text-slate-400">
+        Loading course curriculum and material library...
+      </div>
+    );
+  }
+
+  if (!apiCourse && !fixtureCourse) {
     return (
       <EmptyState
         title="Course Not Found"
@@ -46,20 +111,37 @@ export const CourseDetailPage: React.FC = () => {
     );
   }
 
-  const toggleModule = (modId: string) => {
-    setExpandedModules((prev) => ({ ...prev, [modId]: !prev[modId] }));
-  };
+  const courseTitle = apiCourse ? apiCourse.title : fixtureCourse!.title;
+  const courseDescription = apiCourse ? apiCourse.description : fixtureCourse!.description;
+  const courseSubject = apiCourse ? apiCourse.subject : fixtureCourse!.category;
+  const courseLevel = apiCourse ? apiCourse.academicLevel : fixtureCourse!.difficulty;
+  const materialCount = apiCourse ? apiCourse.materialCount : materials.length;
+  const indexedChunks = apiCourse ? apiCourse.indexedChunkCount : 0;
 
-  const handleStartLesson = (lesson: LessonFixture) => {
-    toast.info(`Launching interactive session for "${lesson.title}"`, 'Lesson Started');
+  const handleResumeCourse = () => {
+    toast.info(`Launching interactive tutor session for "${courseTitle}"`, 'Session Starting');
     navigate('/tutor');
   };
 
-  const totalLessons = course.modules.reduce((acc, m) => acc + m.lessons.length, 0);
-  const completedLessons = course.modules.reduce(
-    (acc, m) => acc + m.lessons.filter((l) => l.completed).length,
-    0
-  );
+  const getSourceIcon = (sourceType: SourceType) => {
+    switch (sourceType) {
+      case 'pdf':
+        return <FileText className="w-4 h-4 text-rose-500" />;
+      case 'pptx':
+        return <FileSpreadsheet className="w-4 h-4 text-amber-500" />;
+      case 'docx':
+        return <FileText className="w-4 h-4 text-blue-500" />;
+      case 'txt':
+      case 'md':
+        return <FileCode className="w-4 h-4 text-emerald-500" />;
+      case 'audio':
+        return <FileAudio className="w-4 h-4 text-purple-500" />;
+      case 'video':
+        return <FileVideo className="w-4 h-4 text-indigo-500" />;
+      default:
+        return <FileText className="w-4 h-4 text-slate-500" />;
+    }
+  };
 
   return (
     <div className="space-y-8 pb-12">
@@ -70,7 +152,7 @@ export const CourseDetailPage: React.FC = () => {
           className="inline-flex items-center text-xs font-semibold text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 transition-colors gap-1.5"
         >
           <ArrowLeft className="w-3.5 h-3.5" />
-          Back to Courses
+          Back to Courses Catalog
         </Link>
       </div>
 
@@ -78,33 +160,49 @@ export const CourseDetailPage: React.FC = () => {
       <div className="rounded-2xl p-6 sm:p-8 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-subtle flex flex-col lg:flex-row lg:items-center justify-between gap-6">
         <div className="space-y-3 max-w-3xl">
           <div className="flex items-center gap-2">
-            <Badge variant="brand">{course.category}</Badge>
-            <Badge variant="neutral">{course.difficulty}</Badge>
+            <Badge variant="brand">{courseSubject}</Badge>
+            <Badge variant="neutral" className="capitalize">{courseLevel}</Badge>
+            {apiCourse && (
+              <Badge
+                variant={
+                  apiCourse.processingStatus === 'indexed'
+                    ? 'success'
+                    : apiCourse.processingStatus === 'processing'
+                    ? 'warning'
+                    : 'neutral'
+                }
+                className="capitalize"
+              >
+                {apiCourse.processingStatus}
+              </Badge>
+            )}
           </div>
 
           <h1 className="text-2xl sm:text-3xl font-display font-bold text-slate-900 dark:text-slate-100">
-            {course.title}
+            {courseTitle}
           </h1>
 
           <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-400 leading-relaxed">
-            {course.description}
+            {courseDescription}
           </p>
 
           <div className="flex flex-wrap items-center gap-4 text-xs text-slate-500 dark:text-slate-400 pt-2">
             <span className="flex items-center gap-1.5">
-              <Clock className="w-4 h-4 text-indigo-500" />
-              {course.durationHours} Total Hours
+              <Layers className="w-4 h-4 text-indigo-500" />
+              {materials.length || materialCount} Materials
+            </span>
+            <span className="flex items-center gap-1.5">
+              <Sparkles className="w-4 h-4 text-amber-500" />
+              {indexedChunks} Indexed Chunks
+            </span>
+            <span className="flex items-center gap-1.5">
+              <Clock className="w-4 h-4 text-slate-400" />
+              Adaptive Pacing
             </span>
             <span className="flex items-center gap-1.5">
               <Star className="w-4 h-4 text-amber-500 fill-amber-500" />
-              {course.rating} Rating
+              4.9 Rating
             </span>
-            <span className="flex items-center gap-1.5">
-              <Users className="w-4 h-4" />
-              {course.enrolledStudents.toLocaleString()} Enrolled
-            </span>
-            <span>·</span>
-            <span>Instructor: <strong className="text-slate-800 dark:text-slate-200">{course.instructor.name}</strong></span>
           </div>
         </div>
 
@@ -112,17 +210,25 @@ export const CourseDetailPage: React.FC = () => {
         <div className="w-full lg:w-72 p-5 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 space-y-4 shrink-0">
           <div className="space-y-1">
             <div className="flex justify-between text-xs font-semibold">
-              <span className="text-slate-600 dark:text-slate-400">Course Progress</span>
-              <span className="text-indigo-600 dark:text-indigo-400">{course.progressPercentage}%</span>
+              <span className="text-slate-600 dark:text-slate-400">Knowledge Indexed</span>
+              <span className="text-indigo-600 dark:text-indigo-400">
+                {materials.filter((m) => m.status === 'indexed').length} / {Math.max(1, materials.length)} files
+              </span>
             </div>
             <div className="w-full bg-slate-200 dark:bg-slate-700 h-2 rounded-full overflow-hidden">
               <div
                 className="bg-indigo-600 h-2 rounded-full transition-all duration-300"
-                style={{ width: `${course.progressPercentage}%` }}
+                style={{
+                  width: `${
+                    materials.length > 0
+                      ? (materials.filter((m) => m.status === 'indexed').length / materials.length) * 100
+                      : 100
+                  }%`,
+                }}
               />
             </div>
             <p className="text-[11px] text-slate-400 mt-1">
-              {completedLessons} of {totalLessons} lessons completed
+              Traceable cognitive Socratic inquiry ready
             </p>
           </div>
 
@@ -131,10 +237,10 @@ export const CourseDetailPage: React.FC = () => {
             variant="primary"
             size="lg"
             className="w-full"
-            onClick={() => handleStartLesson(course.modules[0]?.lessons[0]!)}
+            onClick={handleResumeCourse}
           >
             <PlayCircle className="w-4 h-4 mr-1.5" />
-            Resume Learning
+            Resume Tutoring
           </Button>
         </div>
       </div>
@@ -142,105 +248,183 @@ export const CourseDetailPage: React.FC = () => {
       {/* Tabs Layout */}
       <Tabs value={activeTab} onChange={setActiveTab}>
         <TabsList variant="underline">
+          <TabsTrigger value="materials">
+            Learning Materials Library ({materials.length})
+          </TabsTrigger>
           <TabsTrigger value="syllabus">Syllabus & Modules</TabsTrigger>
           <TabsTrigger value="overview">Course Overview</TabsTrigger>
           <TabsTrigger value="outcomes">Cognitive Outcomes</TabsTrigger>
         </TabsList>
 
-        {/* Syllabus Tab Content */}
-        <TabsContent value="syllabus" className="space-y-4 pt-4">
-          {course.modules.map((mod, modIdx) => (
-            <Card key={mod.id} className="p-0 overflow-hidden">
-              <button
-                type="button"
-                onClick={() => toggleModule(mod.id)}
-                className="w-full p-4 sm:p-5 flex items-center justify-between text-left hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-colors cursor-pointer"
-              >
-                <div>
-                  <span className="text-[10px] font-bold text-indigo-600 dark:text-indigo-400 uppercase tracking-wider">
-                    Module {modIdx + 1}
-                  </span>
-                  <h3 className="text-sm sm:text-base font-semibold text-slate-900 dark:text-slate-100 mt-0.5">
-                    {mod.title}
-                  </h3>
-                  <p className="text-xs text-slate-400 mt-0.5">
-                    {mod.lessons.length} lessons · {mod.lessons.filter((l) => l.completed).length} completed
-                  </p>
-                </div>
-                <div className="p-1 rounded-lg text-slate-400">
-                  {expandedModules[mod.id] ? <ChevronUp className="w-5 h-5" /> : <ChevronDown className="w-5 h-5" />}
-                </div>
-              </button>
+        {/* Tab 1: Learning Materials Library (Module 4 & 5 Core UI) */}
+        <TabsContent value="materials" className="space-y-6 pt-4">
+          {/* Material Uploader */}
+          <MaterialUploader
+            courseId={courseId}
+            onUploaded={() => {
+              refetchMaterials();
+              queryClient.invalidateQueries({ queryKey: ['course', courseId] });
+            }}
+          />
 
-              {expandedModules[mod.id] && (
-                <div className="border-t border-slate-100 dark:border-slate-800 divide-y divide-slate-100 dark:divide-slate-800/60 bg-slate-50/30 dark:bg-slate-900/40">
-                  {mod.lessons.map((lesson) => (
-                    <div
-                      key={lesson.id}
-                      className="p-4 flex items-center justify-between hover:bg-slate-50 dark:hover:bg-slate-800/30 transition-colors"
-                    >
-                      <div className="flex items-center gap-3">
-                        {lesson.completed ? (
-                          <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0" />
-                        ) : (
-                          <Circle className="w-4 h-4 text-slate-300 dark:text-slate-600 shrink-0" />
-                        )}
+          {/* Materials List */}
+          <div className="space-y-3">
+            <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100 flex items-center gap-2">
+              <FolderOpen className="w-4 h-4 text-indigo-500" />
+              <span>Uploaded Course Materials ({materials.length})</span>
+            </h3>
+
+            {materials.length === 0 ? (
+              <div className="p-8 text-center rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/40 text-xs text-slate-500 space-y-2">
+                <p>No materials uploaded yet.</p>
+                <p className="text-[11px] text-slate-400">
+                  Drag and drop PDF textbooks, slide decks, documents, or lecture notes above to start indexing.
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {materials.map((mat) => (
+                  <Card key={mat.id} className="p-4 sm:p-5 space-y-3">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                      <div className="flex items-start gap-3">
+                        <div className="p-2.5 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 shrink-0 mt-0.5">
+                          {getSourceIcon(mat.sourceType)}
+                        </div>
+
                         <div>
-                          <p className={`text-xs font-medium ${lesson.completed ? 'text-slate-500 dark:text-slate-400 line-through' : 'text-slate-900 dark:text-slate-100'}`}>
-                            {lesson.title}
-                          </p>
-                          <span className="text-[10px] text-slate-400 capitalize">
-                            {lesson.type} · {lesson.duration}
-                          </span>
+                          <h4 className="text-sm font-semibold text-slate-900 dark:text-slate-100">
+                            {mat.originalName}
+                          </h4>
+
+                          <div className="flex flex-wrap items-center gap-3 text-xs text-slate-500 dark:text-slate-400 mt-1">
+                            <span className="uppercase font-mono text-[10px]">
+                              {mat.sourceType}
+                            </span>
+                            <span>·</span>
+                            <span>{(mat.sizeBytes / 1024).toFixed(1)} KB</span>
+
+                            {mat.metadata?.pageCount && (
+                              <>
+                                <span>·</span>
+                                <span>{mat.metadata.pageCount} pages</span>
+                              </>
+                            )}
+
+                            {mat.metadata?.slideCount && (
+                              <>
+                                <span>·</span>
+                                <span>{mat.metadata.slideCount} slides</span>
+                              </>
+                            )}
+
+                            {mat.metadata?.durationSeconds && (
+                              <>
+                                <span>·</span>
+                                <span>
+                                  {Math.floor(mat.metadata.durationSeconds / 60)}m{' '}
+                                  {mat.metadata.durationSeconds % 60}s
+                                </span>
+                              </>
+                            )}
+
+                            {mat.metadata?.ocrApplied && (
+                              <Badge variant="warning" size="sm">
+                                OCR Processed
+                              </Badge>
+                            )}
+                          </div>
                         </div>
                       </div>
 
-                      <Button
-                        variant={lesson.completed ? 'ghost' : 'outline'}
-                        size="sm"
-                        onClick={() => handleStartLesson(lesson)}
-                      >
-                        {lesson.completed ? 'Review' : 'Start'}
-                      </Button>
+                      {/* Action buttons */}
+                      <div className="flex items-center gap-2 self-end sm:self-auto">
+                        {mat.status === 'indexed' && (
+                          <Button
+                            variant="secondary"
+                            size="sm"
+                            onClick={() => {
+                              setPreviewMaterial(mat);
+                              setIsPreviewOpen(true);
+                            }}
+                          >
+                            <Eye className="w-3.5 h-3.5 mr-1" />
+                            Preview
+                          </Button>
+                        )}
+
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => {
+                            if (confirm(`Delete "${mat.originalName}" and remove indexed vectors?`)) {
+                              deleteMaterialMutation.mutate(mat.id);
+                            }
+                          }}
+                          className="text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </Button>
+                      </div>
                     </div>
-                  ))}
-                </div>
-              )}
+
+                    {/* Processing Timeline & Progress */}
+                    <ProcessingTimeline
+                      courseId={courseId}
+                      material={mat}
+                      onRetrySuccess={() => {
+                        refetchMaterials();
+                      }}
+                    />
+                  </Card>
+                ))}
+              </div>
+            )}
+          </div>
+        </TabsContent>
+
+        {/* Tab 2: Syllabus & Modules */}
+        <TabsContent value="syllabus" className="space-y-4 pt-4">
+          {(fixtureCourse?.modules || []).map((mod, modIdx) => (
+            <Card key={mod.id} className="p-4 sm:p-5">
+              <div className="mb-3">
+                <span className="text-[10px] font-bold text-indigo-600 dark:text-indigo-400 uppercase tracking-wider">
+                  Module {modIdx + 1}
+                </span>
+                <h3 className="text-sm sm:text-base font-semibold text-slate-900 dark:text-slate-100 mt-0.5">
+                  {mod.title}
+                </h3>
+              </div>
+
+              <div className="divide-y divide-slate-100 dark:divide-slate-800">
+                {mod.lessons.map((lesson) => (
+                  <div key={lesson.id} className="py-2.5 flex items-center justify-between text-xs">
+                    <div className="flex items-center gap-2.5">
+                      {lesson.completed ? (
+                        <CheckCircle2 className="w-4 h-4 text-emerald-500" />
+                      ) : (
+                        <Circle className="w-4 h-4 text-slate-300 dark:text-slate-600" />
+                      )}
+                      <span>{lesson.title}</span>
+                    </div>
+                    <span className="text-slate-400 capitalize">{lesson.duration}</span>
+                  </div>
+                ))}
+              </div>
             </Card>
           ))}
         </TabsContent>
 
-        {/* Overview Tab Content */}
+        {/* Tab 3: Course Overview */}
         <TabsContent value="overview" className="pt-4">
-          <Card className="space-y-4 p-6">
+          <Card className="space-y-4 p-6 text-xs text-slate-600 dark:text-slate-400 leading-relaxed">
             <h3 className="text-base font-semibold text-slate-900 dark:text-slate-100 font-display">
               About This Course
             </h3>
-            <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed">
-              This curriculum is designed to transition learners from rote algorithmic memorization into structural intuition. Rather than presenting pre-baked solutions, our AI tutor scaffolds your thought process using progressive counter-examples and cognitive stress tests.
-            </p>
-            <div className="pt-2 grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div className="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700/60">
-                <span className="text-xs font-semibold text-slate-800 dark:text-slate-200 block mb-1">
-                  Prerequisites
-                </span>
-                <p className="text-xs text-slate-500">
-                  Basic familiarity with recursion, big-O asymptotic analysis, and basic graph representation (adjacency lists).
-                </p>
-              </div>
-              <div className="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700/60">
-                <span className="text-xs font-semibold text-slate-800 dark:text-slate-200 block mb-1">
-                  Estimated Completion
-                </span>
-                <p className="text-xs text-slate-500">
-                  3 weeks at an average cadence of 5 hours per week.
-                </p>
-              </div>
-            </div>
+            <p>{courseDescription}</p>
           </Card>
         </TabsContent>
 
-        {/* Outcomes Tab Content */}
+        {/* Tab 4: Cognitive Outcomes */}
         <TabsContent value="outcomes" className="pt-4">
           <Card className="space-y-4 p-6">
             <h3 className="text-base font-semibold text-slate-900 dark:text-slate-100 font-display flex items-center gap-2">
@@ -250,20 +434,27 @@ export const CourseDetailPage: React.FC = () => {
             <ul className="space-y-2.5 text-xs text-slate-600 dark:text-slate-300">
               <li className="flex items-start gap-2">
                 <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0 mt-0.5" />
-                <span>Independently formulate state definitions and transition equations for unseen recurrence problems.</span>
+                <span>Independently formulate state definitions and transition equations.</span>
               </li>
               <li className="flex items-start gap-2">
                 <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0 mt-0.5" />
-                <span>Evaluate memory locality tradeoffs between top-down recursion trees and flat iterative matrices.</span>
-              </li>
-              <li className="flex items-start gap-2">
-                <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0 mt-0.5" />
-                <span>Apply Bitmask state compression to optimize NP-hard permutation searches.</span>
+                <span>Evaluate locality tradeoffs between recursion trees and iterative matrices.</span>
               </li>
             </ul>
           </Card>
         </TabsContent>
       </Tabs>
+
+      {/* Material Preview Modal */}
+      <MaterialPreviewModal
+        courseId={courseId}
+        material={previewMaterial}
+        isOpen={isPreviewOpen}
+        onClose={() => {
+          setIsPreviewOpen(false);
+          setPreviewMaterial(null);
+        }}
+      />
     </div>
   );
 };

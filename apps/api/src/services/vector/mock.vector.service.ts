@@ -41,20 +41,62 @@ export class MockVectorService implements IVectorService {
     points: VectorPoint[]
   ): Promise<boolean> {
     const existing = this.pointsMap.get(collection) || [];
-    this.pointsMap.set(collection, [...existing, ...points]);
+    // Replace if same id, else append
+    const existingIds = new Set(points.map((p) => p.id));
+    const filtered = existing.filter((p) => !existingIds.has(p.id));
+    this.pointsMap.set(collection, [...filtered, ...points]);
     return true;
   }
 
   public async search(
     collection: string,
     _vector: number[],
-    limit = 5
+    limit = 5,
+    filter?: Record<string, unknown>
   ): Promise<VectorSearchResult[]> {
-    const points = this.pointsMap.get(collection) || [];
+    let points = this.pointsMap.get(collection) || [];
+
+    if (filter) {
+      points = points.filter((p) => {
+        if (!p.payload) return false;
+        return Object.entries(filter).every(([k, v]) => p.payload?.[k] === v);
+      });
+    }
+
     return points.slice(0, limit).map((p, idx) => ({
       id: p.id,
       score: 0.99 - idx * 0.05,
       payload: p.payload || {},
     }));
+  }
+
+  public async deletePointsByFilter(
+    collection: string,
+    filter: Record<string, unknown>
+  ): Promise<boolean> {
+    const points = this.pointsMap.get(collection) || [];
+    const remaining = points.filter((p) => {
+      if (!p.payload) return true;
+      // If matches filter, remove it
+      const matches = Object.entries(filter).every(([k, v]) => p.payload?.[k] === v);
+      return !matches;
+    });
+    this.pointsMap.set(collection, remaining);
+    return true;
+  }
+
+  public async deletePoints(
+    collection: string,
+    ids: Array<string | number>
+  ): Promise<boolean> {
+    const idSet = new Set(ids);
+    const points = this.pointsMap.get(collection) || [];
+    const remaining = points.filter((p) => !idSet.has(p.id));
+    this.pointsMap.set(collection, remaining);
+    return true;
+  }
+
+  public getStoredPoints(collection: string): VectorPoint[] {
+    return this.pointsMap.get(collection) || [];
   }
 }

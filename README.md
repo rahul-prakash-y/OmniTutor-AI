@@ -92,6 +92,29 @@ npm run dev:web
 | `DELETE` | `/api/v1/users/me` | Delete account, revoke all sessions, and soft-delete user data | Yes + CSRF |
 | `GET` | `/api/v1/admin/users` | List platform users (Admin role required) | Yes (`admin`) |
 
+### Course Management & Secure Material Uploads (Module 4)
+| Method | Endpoint | Description | Auth Required |
+|---|---|---|---|
+| `POST` | `/api/v1/courses` | Create new course curriculum | Yes + CSRF |
+| `GET` | `/api/v1/courses` | List user courses (with search, category, active/archived filters) | Yes |
+| `GET` | `/api/v1/courses/:courseId` | Fetch course details (enforces course ownership) | Yes |
+| `PATCH` | `/api/v1/courses/:courseId` | Update course title, description, tags, or status | Yes + CSRF |
+| `POST` | `/api/v1/courses/:courseId/archive` | Toggle course archive status | Yes + CSRF |
+| `DELETE` | `/api/v1/courses/:courseId` | Delete course and cascade delete materials and vector points | Yes + CSRF |
+| `POST` | `/api/v1/courses/:courseId/materials/upload` | Secure streaming multipart upload with magic byte inspection | Yes + CSRF |
+| `GET` | `/api/v1/courses/:courseId/materials` | List learning materials in course library | Yes |
+| `GET` | `/api/v1/courses/:courseId/materials/:materialId` | Get material metadata and processing state | Yes |
+| `DELETE` | `/api/v1/courses/:courseId/materials/:materialId` | Delete material file, document, and Qdrant points | Yes + CSRF |
+| `POST` | `/api/v1/courses/:courseId/materials/:materialId/retry` | Retry failed ingestion job with exponential backoff | Yes + CSRF |
+
+### Multimodal Ingestion Pipeline (Module 5)
+| Method | Endpoint | Description | Auth Required |
+|---|---|---|---|
+| `GET` | `/api/v1/ingestion/jobs/:jobId` | Poll asynchronous ingestion job status, stage, and progress | Yes |
+| `GET` | `/api/v1/courses/:courseId/ingestion-status` | Get all ingestion jobs for course library | Yes |
+| `GET` | `/api/v1/courses/:courseId/materials/:materialId/preview` | Preview extracted semantic chunks, headings, and vectors | Yes |
+| `POST` | `/api/v1/ingestion/jobs/:jobId/cancel` | Cancel queued ingestion job | Yes + CSRF |
+
 All responses conform to the uniform envelope:
 ```json
 {

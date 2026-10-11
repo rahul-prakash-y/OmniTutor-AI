@@ -10,6 +10,12 @@ import type {
   VerifyEmailInput,
   UpdateProfileInput,
   UserProfile,
+  Course,
+  CreateCourseInput,
+  UpdateCourseInput,
+  CourseFilterQuery,
+  Material,
+  IngestionJob,
 } from '@omnitutor/shared';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:4000/api/v1';
@@ -34,10 +40,16 @@ export class ApiClient {
     const url = `${this.baseUrl}${endpoint.startsWith('/') ? endpoint : `/${endpoint}`}`;
     const method = options?.method?.toUpperCase() || 'GET';
 
-    const headers: Record<string, string> = {
-      'Content-Type': 'application/json',
-      ...((options?.headers as Record<string, string>) || {}),
-    };
+    const isFormData = options?.body instanceof FormData;
+    const headers: Record<string, string> = {};
+
+    if (!isFormData) {
+      headers['Content-Type'] = 'application/json';
+    }
+
+    if (options?.headers) {
+      Object.assign(headers, options.headers);
+    }
 
     // Attach CSRF token on state-changing requests if present
     if (this.csrfToken && ['POST', 'PUT', 'PATCH', 'DELETE'].includes(method)) {
@@ -160,6 +172,144 @@ export class ApiClient {
     });
     this.setCsrfToken(null);
     return res;
+  }
+
+  // --- Course Endpoints (Module 4) ---
+  public async getCourses(
+    params?: Partial<CourseFilterQuery>
+  ): Promise<ApiResponse<{ courses: Course[]; total: number; page: number; limit: number }>> {
+    const query = new URLSearchParams();
+    if (params?.search) query.append('search', params.search);
+    if (params?.subject) query.append('subject', params.subject);
+    if (params?.academicLevel) query.append('academicLevel', params.academicLevel);
+    if (params?.status) query.append('status', params.status);
+    if (params?.page) query.append('page', String(params.page));
+    if (params?.limit) query.append('limit', String(params.limit));
+
+    const qs = query.toString();
+    return this.request<{ courses: Course[]; total: number; page: number; limit: number }>(
+      `/courses${qs ? `?${qs}` : ''}`
+    );
+  }
+
+  public async getCourse(courseId: string): Promise<ApiResponse<Course>> {
+    return this.request<Course>(`/courses/${courseId}`);
+  }
+
+  public async createCourse(input: CreateCourseInput): Promise<ApiResponse<Course>> {
+    return this.request<Course>('/courses', {
+      method: 'POST',
+      body: JSON.stringify(input),
+    });
+  }
+
+  public async updateCourse(courseId: string, input: UpdateCourseInput): Promise<ApiResponse<Course>> {
+    return this.request<Course>(`/courses/${courseId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(input),
+    });
+  }
+
+  public async archiveCourse(courseId: string, isArchived: boolean): Promise<ApiResponse<Course>> {
+    return this.request<Course>(`/courses/${courseId}/archive`, {
+      method: 'POST',
+      body: JSON.stringify({ isArchived }),
+    });
+  }
+
+  public async deleteCourse(courseId: string): Promise<ApiResponse<{ message: string }>> {
+    return this.request<{ message: string }>(`/courses/${courseId}`, {
+      method: 'DELETE',
+    });
+  }
+
+  // --- Material & Upload Endpoints (Module 4 & 5) ---
+  public async getMaterials(courseId: string): Promise<ApiResponse<Material[]>> {
+    return this.request<Material[]>(`/courses/${courseId}/materials`);
+  }
+
+  public async uploadMaterial(
+    courseId: string,
+    file: File
+  ): Promise<ApiResponse<{ material: Material; job: IngestionJob }>> {
+    const formData = new FormData();
+    formData.append('file', file, file.name);
+
+    return this.request<{ material: Material; job: IngestionJob }>(
+      `/courses/${courseId}/materials/upload`,
+      {
+        method: 'POST',
+        body: formData,
+      }
+    );
+  }
+
+  public async deleteMaterial(
+    courseId: string,
+    materialId: string
+  ): Promise<ApiResponse<{ message: string }>> {
+    return this.request<{ message: string }>(
+      `/courses/${courseId}/materials/${materialId}`,
+      {
+        method: 'DELETE',
+      }
+    );
+  }
+
+  public async retryMaterial(
+    courseId: string,
+    materialId: string
+  ): Promise<ApiResponse<IngestionJob>> {
+    return this.request<IngestionJob>(
+      `/courses/${courseId}/materials/${materialId}/retry`,
+      {
+        method: 'POST',
+      }
+    );
+  }
+
+  // --- Ingestion Status & Preview Endpoints (Module 5) ---
+  public async getJobStatus(jobId: string): Promise<ApiResponse<IngestionJob>> {
+    return this.request<IngestionJob>(`/ingestion/jobs/${jobId}`);
+  }
+
+  public async getCourseIngestionStatus(courseId: string): Promise<ApiResponse<IngestionJob[]>> {
+    return this.request<IngestionJob[]>(`/courses/${courseId}/ingestion-status`);
+  }
+
+  public async getMaterialPreview(
+    courseId: string,
+    materialId: string
+  ): Promise<
+    ApiResponse<{
+      materialTitle: string;
+      sourceType: string;
+      totalChunks: number;
+      chunks: Array<{
+        id: string;
+        heading?: string;
+        page?: number;
+        slide?: number;
+        timeRange?: { start: number; end: number };
+        text: string;
+        chunkIndex: number;
+      }>;
+    }>
+  > {
+    return this.request<{
+      materialTitle: string;
+      sourceType: string;
+      totalChunks: number;
+      chunks: Array<{
+        id: string;
+        heading?: string;
+        page?: number;
+        slide?: number;
+        timeRange?: { start: number; end: number };
+        text: string;
+        chunkIndex: number;
+      }>;
+    }>(`/courses/${courseId}/materials/${materialId}/preview`);
   }
 
   // Dev helper to fetch tokens in development/test environments

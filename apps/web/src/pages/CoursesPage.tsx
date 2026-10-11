@@ -6,25 +6,122 @@ import { Input } from '../components/ui/Input';
 import { Badge } from '../components/ui/Badge';
 import { Tabs, TabsList, TabsTrigger } from '../components/ui/Tabs';
 import { EmptyState } from '../components/ui/EmptyState';
+import { CreateCourseModal } from '../components/course/CreateCourseModal';
 import { COURSES_FIXTURE } from '../fixtures/courses';
-import { Search, BookOpen, Clock, Star, Users, ArrowRight } from 'lucide-react';
+import { apiClient } from '../services/apiClient';
+import { toast } from '../stores/useToastStore';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import {
+  Search,
+  BookOpen,
+  Clock,
+  ArrowRight,
+  Plus,
+  Archive,
+  Trash2,
+  Layers,
+  Sparkles,
+} from 'lucide-react';
+import type { Course } from '@omnitutor/shared';
 
 export const CoursesPage: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string>('All');
-  const [tab, setTab] = useState<'all' | 'enrolled'>('all');
+  const [tab, setTab] = useState<'all' | 'active' | 'archived'>('active');
+  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
 
-  const categories = ['All', 'Computer Science', 'Mathematics', 'Data Science', 'Physics'];
+  const categories = [
+    'All',
+    'Computer Science',
+    'Mathematics',
+    'Data Science',
+    'Physics',
+    'Languages',
+  ];
 
-  const filteredCourses = COURSES_FIXTURE.filter((course) => {
+  // Fetch real user courses from backend API
+  const { data: apiCoursesData, isLoading } = useQuery({
+    queryKey: ['courses', tab],
+    queryFn: async () => {
+      const res = await apiClient.getCourses({
+        status: tab === 'all' ? 'all' : tab === 'archived' ? 'archived' : 'active',
+      });
+      return res.success && res.data ? res.data.courses : [];
+    },
+  });
+
+  const apiCourses: Course[] = apiCoursesData || [];
+
+  // Archive mutation
+  const archiveMutation = useMutation({
+    mutationFn: async ({ courseId, isArchived }: { courseId: string; isArchived: boolean }) => {
+      return await apiClient.archiveCourse(courseId, isArchived);
+    },
+    onSuccess: (_, variables) => {
+      toast.success(
+        variables.isArchived ? 'Course archived successfully.' : 'Course restored to active library.',
+        'Course Updated'
+      );
+      queryClient.invalidateQueries({ queryKey: ['courses'] });
+    },
+  });
+
+  // Delete mutation
+  const deleteMutation = useMutation({
+    mutationFn: async (courseId: string) => {
+      return await apiClient.deleteCourse(courseId);
+    },
+    onSuccess: () => {
+      toast.success('Course and all materials deleted.', 'Course Deleted');
+      queryClient.invalidateQueries({ queryKey: ['courses'] });
+    },
+  });
+
+  // Combined display list: API courses first, or fixture courses if user has not created any
+  const combinedCourses = [
+    ...apiCourses.map((c) => ({
+      id: c.id,
+      title: c.title,
+      description: c.description,
+      category: c.subject.replace(/_/g, ' ').replace(/\b\w/g, (l) => l.toUpperCase()),
+      difficulty: c.academicLevel,
+      durationHours: Math.max(2, c.materialCount * 3),
+      rating: 4.9,
+      enrolledStudents: 1,
+      progressPercentage: c.indexedChunkCount > 0 ? 100 : 0,
+      instructor: { name: 'You (Course Creator)' },
+      materialCount: c.materialCount,
+      indexedChunkCount: c.indexedChunkCount,
+      processingStatus: c.processingStatus,
+      isArchived: c.isArchived,
+      isUserCreated: true,
+    })),
+    // Include fixture courses if in active tab
+    ...(tab !== 'archived'
+      ? COURSES_FIXTURE.map((f) => ({
+          ...f,
+          materialCount: f.modules.length * 3,
+          indexedChunkCount: f.modules.length * 15,
+          processingStatus: 'indexed' as const,
+          isArchived: false,
+          isUserCreated: false,
+        }))
+      : []),
+  ];
+
+  const filteredCourses = combinedCourses.filter((course) => {
     const matchesSearch =
       course.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
       course.description.toLowerCase().includes(searchQuery.toLowerCase());
     const matchesCategory =
-      selectedCategory === 'All' || course.category === selectedCategory;
+      selectedCategory === 'All' ||
+      course.category.toLowerCase().includes(selectedCategory.toLowerCase());
     const matchesTab =
-      tab === 'all' || (tab === 'enrolled' && course.progressPercentage > 0);
+      tab === 'all' ||
+      (tab === 'active' && !course.isArchived) ||
+      (tab === 'archived' && course.isArchived);
 
     return matchesSearch && matchesCategory && matchesTab;
   });
@@ -34,22 +131,38 @@ export const CoursesPage: React.FC = () => {
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold font-display text-slate-900 dark:text-slate-100">
-            Course Catalog & Curricula
+          <h1 className="text-2xl font-bold font-display text-slate-900 dark:text-slate-100 flex items-center gap-2">
+            <span>Course Catalog & Curricula</span>
+            <span className="text-xs py-0.5 px-2 rounded-full bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-400 font-normal">
+              {filteredCourses.length} courses
+            </span>
           </h1>
           <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 mt-1">
-            Multimodal curricula aligned with adaptive Socratic inquiry.
+            Multimodal curricula with secure material indexing and adaptive Socratic tutoring.
           </p>
         </div>
 
-        <Tabs value={tab} onChange={(v) => setTab(v as 'all' | 'enrolled')}>
-          <TabsList>
-            <TabsTrigger value="all">All Courses</TabsTrigger>
-            <TabsTrigger value="enrolled" badge={COURSES_FIXTURE.filter((c) => c.progressPercentage > 0).length}>
-              Enrolled
-            </TabsTrigger>
-          </TabsList>
-        </Tabs>
+        <div className="flex items-center gap-3">
+          <Tabs
+            value={tab}
+            onChange={(v) => setTab(v as 'all' | 'active' | 'archived')}
+          >
+            <TabsList>
+              <TabsTrigger value="active">Active</TabsTrigger>
+              <TabsTrigger value="archived">Archived</TabsTrigger>
+              <TabsTrigger value="all">All</TabsTrigger>
+            </TabsList>
+          </Tabs>
+
+          <Button
+            id="btn-create-course-modal"
+            variant="primary"
+            onClick={() => setIsCreateModalOpen(true)}
+          >
+            <Plus className="w-4 h-4 mr-1.5" />
+            <span>New Course</span>
+          </Button>
+        </div>
       </div>
 
       {/* Filter and Search Bar */}
@@ -57,7 +170,7 @@ export const CoursesPage: React.FC = () => {
         <div className="flex-1">
           <Input
             id="input-search-courses"
-            placeholder="Search by topic, instructor, or keywords..."
+            placeholder="Search by topic, keyword, or course title..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             leadingIcon={<Search className="w-4 h-4" />}
@@ -84,18 +197,40 @@ export const CoursesPage: React.FC = () => {
       </div>
 
       {/* Course Grid */}
-      {filteredCourses.length > 0 ? (
+      {isLoading ? (
+        <div className="py-20 text-center text-xs text-slate-400">
+          Loading course library...
+        </div>
+      ) : filteredCourses.length > 0 ? (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {filteredCourses.map((course) => (
             <Card key={course.id} hover className="flex flex-col justify-between">
               <div className="space-y-3.5">
                 <div className="flex items-center justify-between">
-                  <Badge variant="brand" size="sm">
-                    {course.category}
-                  </Badge>
-                  <Badge variant="neutral" size="sm">
-                    {course.difficulty}
-                  </Badge>
+                  <div className="flex items-center gap-2">
+                    <Badge variant="brand" size="sm">
+                      {course.category}
+                    </Badge>
+                    <Badge variant="neutral" size="sm" className="capitalize">
+                      {course.difficulty}
+                    </Badge>
+                  </div>
+
+                  {course.isUserCreated && (
+                    <Badge
+                      variant={
+                        course.processingStatus === 'indexed'
+                          ? 'success'
+                          : course.processingStatus === 'processing'
+                          ? 'warning'
+                          : 'neutral'
+                      }
+                      size="sm"
+                      className="capitalize"
+                    >
+                      {course.processingStatus}
+                    </Badge>
+                  )}
                 </div>
 
                 <div>
@@ -107,42 +242,59 @@ export const CoursesPage: React.FC = () => {
                   </p>
                 </div>
 
+                {/* Material & Chunk Counts */}
                 <div className="flex items-center gap-4 text-xs text-slate-500 dark:text-slate-400 pt-1">
+                  <span className="flex items-center gap-1">
+                    <Layers className="w-3.5 h-3.5 text-indigo-500" />
+                    {course.materialCount} materials
+                  </span>
+                  <span className="flex items-center gap-1">
+                    <Sparkles className="w-3.5 h-3.5 text-amber-500" />
+                    {course.indexedChunkCount} indexed chunks
+                  </span>
                   <span className="flex items-center gap-1">
                     <Clock className="w-3.5 h-3.5" />
                     {course.durationHours} hrs
                   </span>
-                  <span className="flex items-center gap-1">
-                    <Star className="w-3.5 h-3.5 text-amber-500 fill-amber-500" />
-                    {course.rating}
-                  </span>
-                  <span className="flex items-center gap-1">
-                    <Users className="w-3.5 h-3.5" />
-                    {course.enrolledStudents.toLocaleString()}
-                  </span>
                 </div>
-
-                {course.progressPercentage > 0 && (
-                  <div className="space-y-1 pt-1">
-                    <div className="flex justify-between text-[11px]">
-                      <span className="text-slate-500">Completed</span>
-                      <span className="font-semibold text-slate-700 dark:text-slate-300">
-                        {course.progressPercentage}%
-                      </span>
-                    </div>
-                    <div className="w-full bg-slate-100 dark:bg-slate-800 h-1.5 rounded-full overflow-hidden">
-                      <div
-                        className="bg-indigo-600 h-1.5 rounded-full"
-                        style={{ width: `${course.progressPercentage}%` }}
-                      />
-                    </div>
-                  </div>
-                )}
               </div>
 
+              {/* Bottom Actions */}
               <div className="pt-4 mt-4 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between">
-                <div className="text-xs text-slate-500">
-                  By {course.instructor.name}
+                <div className="flex items-center gap-2">
+                  {course.isUserCreated && (
+                    <>
+                      <button
+                        type="button"
+                        title={course.isArchived ? 'Restore Course' : 'Archive Course'}
+                        onClick={() =>
+                          archiveMutation.mutate({
+                            courseId: course.id,
+                            isArchived: !course.isArchived,
+                          })
+                        }
+                        className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                      >
+                        <Archive className="w-3.5 h-3.5" />
+                      </button>
+
+                      <button
+                        type="button"
+                        title="Delete Course"
+                        onClick={() => {
+                          if (confirm(`Delete "${course.title}" and its materials?`)) {
+                            deleteMutation.mutate(course.id);
+                          }
+                        }}
+                        className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition-colors"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </>
+                  )}
+                  <span className="text-xs text-slate-400">
+                    By {course.instructor.name}
+                  </span>
                 </div>
 
                 <Button
@@ -150,7 +302,7 @@ export const CoursesPage: React.FC = () => {
                   size="sm"
                   onClick={() => navigate(`/courses/${course.id}`)}
                 >
-                  <span>{course.progressPercentage > 0 ? 'Resume' : 'View Course'}</span>
+                  <span>{course.progressPercentage > 0 ? 'Resume' : 'View Library'}</span>
                   <ArrowRight className="w-3.5 h-3.5 ml-1" />
                 </Button>
               </div>
@@ -161,21 +313,27 @@ export const CoursesPage: React.FC = () => {
         <EmptyState
           icon={<BookOpen className="w-8 h-8 text-indigo-500" />}
           title="No Courses Found"
-          description={`No courses matched "${searchQuery}" in category "${selectedCategory}". Try adjusting your filters.`}
+          description={`No courses matched "${searchQuery}" in category "${selectedCategory}".`}
           action={
             <Button
-              variant="secondary"
-              onClick={() => {
-                setSearchQuery('');
-                setSelectedCategory('All');
-                setTab('all');
-              }}
+              variant="primary"
+              onClick={() => setIsCreateModalOpen(true)}
             >
-              Clear Filters
+              <Plus className="w-4 h-4 mr-1.5" />
+              Create First Course
             </Button>
           }
         />
       )}
+
+      {/* Create Course Modal */}
+      <CreateCourseModal
+        isOpen={isCreateModalOpen}
+        onClose={() => setIsCreateModalOpen(false)}
+        onCreated={() => {
+          queryClient.invalidateQueries({ queryKey: ['courses'] });
+        }}
+      />
     </div>
   );
 };

@@ -22,7 +22,6 @@ export class QdrantService implements IVectorService {
   public async checkHealth(): Promise<ServiceHealthStatus> {
     const start = Date.now();
     try {
-      // Check cluster status or collections
       const collections = await this.client.getCollections();
       const latencyMs = Date.now() - start;
 
@@ -51,7 +50,7 @@ export class QdrantService implements IVectorService {
 
   public async createCollectionIfNotExists(
     name: string,
-    vectorSize = 1536
+    vectorSize = 768
   ): Promise<boolean> {
     try {
       const exists = await this.client.collectionExists(name);
@@ -94,12 +93,23 @@ export class QdrantService implements IVectorService {
   public async search(
     collection: string,
     vector: number[],
-    limit = 5
+    limit = 5,
+    filter?: Record<string, unknown>
   ): Promise<VectorSearchResult[]> {
     try {
+      let qdrantFilter: Record<string, unknown> | undefined;
+      if (filter && Object.keys(filter).length > 0) {
+        const mustClauses = Object.entries(filter).map(([key, value]) => ({
+          key,
+          match: { value },
+        }));
+        qdrantFilter = { must: mustClauses };
+      }
+
       const results = await this.client.query(collection, {
         query: vector,
         limit,
+        filter: qdrantFilter,
         with_payload: true,
       });
 
@@ -111,6 +121,43 @@ export class QdrantService implements IVectorService {
     } catch (err) {
       logger.error({ err, collection }, 'Failed to search Qdrant vector store');
       return [];
+    }
+  }
+
+  public async deletePointsByFilter(
+    collection: string,
+    filter: Record<string, unknown>
+  ): Promise<boolean> {
+    try {
+      const mustClauses = Object.entries(filter).map(([key, value]) => ({
+        key,
+        match: { value },
+      }));
+
+      await this.client.delete(collection, {
+        wait: true,
+        filter: { must: mustClauses },
+      });
+      return true;
+    } catch (err) {
+      logger.error({ err, collection }, 'Failed to delete points by filter from Qdrant');
+      return false;
+    }
+  }
+
+  public async deletePoints(
+    collection: string,
+    ids: Array<string | number>
+  ): Promise<boolean> {
+    try {
+      await this.client.delete(collection, {
+        wait: true,
+        points: ids,
+      });
+      return true;
+    } catch (err) {
+      logger.error({ err, collection }, 'Failed to delete points from Qdrant');
+      return false;
     }
   }
 }
