@@ -115,4 +115,55 @@ export class GeminiProvider implements IAIProvider {
       );
     }
   }
+
+  public async *generateCompletionStream(
+    messages: CompletionMessage[],
+    options?: CompletionOptions
+  ): AsyncIterable<import('./ai.interface.js').StreamChunkResult> {
+    if (!this.client || !this.apiKey) {
+      throw new ServiceUnavailableError(
+        'Google Gemini AI',
+        'GEMINI_API_KEY is not configured in the server environment.'
+      );
+    }
+
+    const modelName = options?.model || this.defaultModel;
+    const contents = messages.map((m) => ({
+      role: m.role === 'assistant' ? 'model' : 'user',
+      parts: [{ text: m.content }],
+    }));
+
+    try {
+      const responseStream = await this.client.models.generateContentStream({
+        model: modelName,
+        contents,
+        config: {
+          temperature: options?.temperature,
+          maxOutputTokens: options?.maxOutputTokens,
+          systemInstruction: options?.systemInstruction,
+          stopSequences: options?.stopSequences,
+        },
+      });
+
+      for await (const chunk of responseStream) {
+        const text = chunk.text || '';
+        yield {
+          text,
+          isComplete: false,
+        };
+      }
+
+      yield {
+        text: '',
+        isComplete: true,
+      };
+    } catch (err) {
+      logger.error({ err, model: modelName }, 'Gemini generateContentStream failed');
+      throw new ServiceUnavailableError(
+        'Google Gemini AI',
+        err instanceof Error ? err.message : 'Model generation stream failed'
+      );
+    }
+  }
 }
+

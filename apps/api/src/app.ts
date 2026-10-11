@@ -34,7 +34,14 @@ import {
   LocalStorageService,
   type IStorageService,
 } from './services/storage/index.js';
-import type { IAIProvider } from './services/ai/ai.interface.js';
+import { getAIProvider, type IAIProvider } from './services/ai/index.js';
+import { RagService } from './modules/rag/rag.service.js';
+import { createRagRoutes } from './modules/rag/rag.routes.js';
+import { TutorService } from './modules/tutor/tutor.service.js';
+import { createTutorRoutes } from './modules/tutor/tutor.routes.js';
+import { AssessmentService } from './modules/assessment/assessment.service.js';
+import { createAssessmentRoutes } from './modules/assessment/assessment.routes.js';
+
 
 export interface AppOptions {
   aiProvider?: IAIProvider;
@@ -49,6 +56,9 @@ export interface AppOptions {
   courseService?: CourseService;
   materialService?: MaterialService;
   ingestionService?: IngestionService;
+  ragService?: RagService;
+  tutorService?: TutorService;
+  assessmentService?: AssessmentService;
   disableRequestLogging?: boolean;
 }
 
@@ -119,10 +129,12 @@ export function createApp(options?: AppOptions) {
   // Start background worker loop
   queueService.start();
 
+  const aiProvider = options?.aiProvider || getAIProvider();
+
   // Health service with injected dependencies if provided
   const healthService =
     options?.healthService ||
-    new HealthService(options?.aiProvider, vectorService);
+    new HealthService(aiProvider, vectorService);
 
   // Email service
   const emailService = options?.emailService || new MockEmailService(env.APP_URL);
@@ -138,6 +150,30 @@ export function createApp(options?: AppOptions) {
   const ingestionService =
     options?.ingestionService || new IngestionService(vectorService);
 
+  // Module 6, 7 & 8: RAG, AI Tutor, and Adaptive Assessment services
+  const ragService =
+    options?.ragService ||
+    new RagService({
+      vectorService,
+      embeddingProvider,
+      aiProvider,
+    });
+
+  const tutorService =
+    options?.tutorService ||
+    new TutorService({
+      ragService,
+      aiProvider,
+    });
+
+  const assessmentService =
+    options?.assessmentService ||
+    new AssessmentService({
+      ragService,
+      vectorService,
+      aiProvider,
+    });
+
   // Mount API v1 routes
   app.register(createHealthRoutes({ healthService }), { prefix: '/api/v1' });
   app.register(createAuthRoutes({ authService, emailService }), { prefix: '/api/v1' });
@@ -148,6 +184,10 @@ export function createApp(options?: AppOptions) {
     createIngestionRoutes({ ingestionService, queueService }),
     { prefix: '/api/v1' }
   );
+  app.register(createRagRoutes({ ragService }), { prefix: '/api/v1' });
+  app.register(createTutorRoutes({ tutorService }), { prefix: '/api/v1' });
+  app.register(createAssessmentRoutes({ assessmentService }), { prefix: '/api/v1' });
+
 
   // Root health probe convenience route
   app.get('/', async () => ({

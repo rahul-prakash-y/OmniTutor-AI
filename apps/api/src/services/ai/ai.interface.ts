@@ -5,6 +5,16 @@ import type {
   ServiceHealthStatus,
 } from '@omnitutor/shared';
 
+export interface StreamChunkResult {
+  text: string;
+  isComplete: boolean;
+  tokensUsed?: {
+    promptTokens: number;
+    completionTokens: number;
+    totalTokens: number;
+  };
+}
+
 export interface IAIProvider {
   readonly providerName: string;
   isConfigured(): boolean;
@@ -13,4 +23,9 @@ export interface IAIProvider {
     messages: CompletionMessage[],
     options?: CompletionOptions
   ): Promise<CompletionResult>;
+  generateCompletionStream(
+    messages: CompletionMessage[],
+    options?: CompletionOptions
+  ): AsyncIterable<StreamChunkResult>;
 }
+

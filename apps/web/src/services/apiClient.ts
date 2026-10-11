@@ -16,6 +16,21 @@ import type {
   CourseFilterQuery,
   Material,
   IngestionJob,
+  RagQueryInput,
+  RagQueryResult,
+  RagDiagnosticInfo,
+  Conversation,
+  ConversationMessage,
+  CreateConversationDto,
+  UpdateConversationDto,
+  SendMessageDto,
+  CreateConceptNoteDto,
+  ConceptNote,
+  Assessment,
+  AssessmentAttempt,
+  GenerateAssessmentDto,
+  QuestionSubmission,
+  TopicMastery,
 } from '@omnitutor/shared';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:4000/api/v1';
@@ -317,6 +332,198 @@ export class ApiClient {
     const res = await fetch(`${this.baseUrl}/auth/dev-tokens`, { credentials: 'include' });
     return res.json();
   }
+
+  // --- Module 6: RAG & Citations ---
+  public async queryRag(
+    courseId: string,
+    payload: Omit<RagQueryInput, 'courseId'>
+  ): Promise<ApiResponse<RagQueryResult>> {
+    return this.request<RagQueryResult>(`/courses/${courseId}/rag/query`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  public async getRagDiagnostics(
+    courseId: string,
+    payload: { query: string; materialId?: string; topK?: number; minScore?: number }
+  ): Promise<ApiResponse<RagDiagnosticInfo>> {
+    return this.request<RagDiagnosticInfo>(`/courses/${courseId}/rag/diagnostics`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  public async getSourceChunk(
+    courseId: string,
+    chunkId: string
+  ): Promise<ApiResponse<any>> {
+    return this.request<any>(`/courses/${courseId}/rag/sources/${chunkId}`);
+  }
+
+  public async resolveCitation(chunkId: string): Promise<ApiResponse<any>> {
+    return this.request<any>('/rag/citations/resolve', {
+      method: 'POST',
+      body: JSON.stringify({ chunkId }),
+    });
+  }
+
+  // --- Module 7: AI Tutor & Conversations ---
+  public async createConversation(
+    courseId: string,
+    payload: CreateConversationDto
+  ): Promise<ApiResponse<Conversation>> {
+    return this.request<Conversation>(`/courses/${courseId}/conversations`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  public async listConversations(
+    courseId: string,
+    limit = 30,
+    offset = 0
+  ): Promise<ApiResponse<{ items: Conversation[]; total: number }>> {
+    return this.request<{ items: Conversation[]; total: number }>(
+      `/courses/${courseId}/conversations?limit=${limit}&offset=${offset}`
+    );
+  }
+
+  public async getConversation(
+    conversationId: string
+  ): Promise<ApiResponse<Conversation>> {
+    return this.request<Conversation>(`/conversations/${conversationId}`);
+  }
+
+  public async updateConversation(
+    conversationId: string,
+    payload: UpdateConversationDto
+  ): Promise<ApiResponse<Conversation>> {
+    return this.request<Conversation>(`/conversations/${conversationId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  public async deleteConversation(
+    conversationId: string
+  ): Promise<ApiResponse<{ deleted: boolean }>> {
+    return this.request<{ deleted: boolean }>(`/conversations/${conversationId}`, {
+      method: 'DELETE',
+    });
+  }
+
+  public async getConversationMessages(
+    conversationId: string,
+    limit = 50,
+    offset = 0
+  ): Promise<ApiResponse<{ items: ConversationMessage[]; total: number }>> {
+    return this.request<{ items: ConversationMessage[]; total: number }>(
+      `/conversations/${conversationId}/messages?limit=${limit}&offset=${offset}`
+    );
+  }
+
+  public async sendConversationMessage(
+    conversationId: string,
+    payload: SendMessageDto
+  ): Promise<ApiResponse<ConversationMessage>> {
+    return this.request<ConversationMessage>(
+      `/conversations/${conversationId}/messages`,
+      {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      }
+    );
+  }
+
+  public async regenerateMessage(
+    conversationId: string,
+    messageId: string,
+    payload?: { academicLevel?: any; explanationStyle?: any }
+  ): Promise<ApiResponse<ConversationMessage>> {
+    return this.request<ConversationMessage>(
+      `/conversations/${conversationId}/messages/${messageId}/regenerate`,
+      {
+        method: 'POST',
+        body: JSON.stringify(payload || {}),
+      }
+    );
+  }
+
+  public async createConceptNote(
+    courseId: string,
+    payload: CreateConceptNoteDto
+  ): Promise<ApiResponse<ConceptNote>> {
+    return this.request<ConceptNote>(`/courses/${courseId}/notes`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  public async listConceptNotes(
+    courseId: string
+  ): Promise<ApiResponse<ConceptNote[]>> {
+    return this.request<ConceptNote[]>(`/courses/${courseId}/notes`);
+  }
+
+  public async deleteConceptNote(
+    courseId: string,
+    noteId: string
+  ): Promise<ApiResponse<{ deleted: boolean }>> {
+    return this.request<{ deleted: boolean }>(`/courses/${courseId}/notes/${noteId}`, {
+      method: 'DELETE',
+    });
+  }
+
+  // --- Module 8: Adaptive Assessments ---
+  public async generateAssessment(
+    courseId: string,
+    payload: GenerateAssessmentDto
+  ): Promise<ApiResponse<Assessment>> {
+    return this.request<Assessment>(`/courses/${courseId}/assessments/generate`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  public async listAssessments(
+    courseId: string,
+    limit = 20,
+    offset = 0
+  ): Promise<ApiResponse<{ items: Assessment[]; total: number }>> {
+    return this.request<{ items: Assessment[]; total: number }>(
+      `/courses/${courseId}/assessments?limit=${limit}&offset=${offset}`
+    );
+  }
+
+  public async getAssessment(
+    assessmentId: string
+  ): Promise<ApiResponse<Assessment>> {
+    return this.request<Assessment>(`/assessments/${assessmentId}`);
+  }
+
+  public async submitAssessmentAttempt(
+    assessmentId: string,
+    responses: QuestionSubmission[]
+  ): Promise<ApiResponse<AssessmentAttempt>> {
+    return this.request<AssessmentAttempt>(`/assessments/${assessmentId}/submit`, {
+      method: 'POST',
+      body: JSON.stringify({ responses }),
+    });
+  }
+
+  public async getTopicMasteries(
+    courseId: string
+  ): Promise<ApiResponse<TopicMastery[]>> {
+    return this.request<TopicMastery[]>(`/courses/${courseId}/assessments/mastery`);
+  }
+
+  public async getAssessmentAttempts(
+    courseId: string
+  ): Promise<ApiResponse<AssessmentAttempt[]>> {
+    return this.request<AssessmentAttempt[]>(`/courses/${courseId}/assessments/attempts`);
+  }
 }
+
 
 export const apiClient = new ApiClient();
