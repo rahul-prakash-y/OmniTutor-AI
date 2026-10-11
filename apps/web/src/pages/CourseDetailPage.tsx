@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { useParams, useNavigate, Link } from 'react-router-dom';
+import React, { useState, useEffect } from 'react';
+import { useParams, useNavigate, Link, useSearchParams } from 'react-router-dom';
 import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import { Badge } from '../components/ui/Badge';
@@ -8,6 +8,8 @@ import { EmptyState } from '../components/ui/EmptyState';
 import { MaterialUploader } from '../components/course/MaterialUploader';
 import { ProcessingTimeline } from '../components/course/ProcessingTimeline';
 import { MaterialPreviewModal } from '../components/course/MaterialPreviewModal';
+import { MaterialViewerModal } from '../components/MaterialViewerModal';
+import { StudyToolsModal } from '../components/StudyToolsModal';
 import { COURSES_FIXTURE } from '../fixtures/courses';
 import { apiClient } from '../services/apiClient';
 import { toast } from '../stores/useToastStore';
@@ -29,17 +31,26 @@ import {
   Eye,
   Layers,
   FolderOpen,
+  BookOpen,
 } from 'lucide-react';
 import type { Material, SourceType } from '@omnitutor/shared';
 
 export const CourseDetailPage: React.FC = () => {
   const { courseId = '' } = useParams<{ courseId: string }>();
+  const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
 
   const [activeTab, setActiveTab] = useState('materials');
   const [previewMaterial, setPreviewMaterial] = useState<Material | null>(null);
   const [isPreviewOpen, setIsPreviewOpen] = useState(false);
+
+  // Material Viewer & Study Tools state
+  const [viewerMaterialId, setViewerMaterialId] = useState<string | null>(null);
+  const [isViewerOpen, setIsViewerOpen] = useState(false);
+  const [studyToolsOpen, setStudyToolsOpen] = useState(false);
+  const [studyToolsMaterialId, setStudyToolsMaterialId] = useState<string | undefined>(undefined);
+  const [studyToolsTab, setStudyToolsTab] = useState<'summary' | 'flashcards' | 'notes'>('summary');
 
   // 1. Fetch Course from API
   const { data: apiCourse, isLoading: isCourseLoading } = useQuery({
@@ -88,6 +99,24 @@ export const CourseDetailPage: React.FC = () => {
       queryClient.invalidateQueries({ queryKey: ['course', courseId] });
     },
   });
+
+  // 3. Fetch Recent Materials
+  const { data: recentMaterials } = useQuery({
+    queryKey: ['recentMaterials'],
+    queryFn: async () => {
+      const res = await apiClient.getRecentMaterials(5);
+      return res.success && res.data ? res.data : [];
+    },
+  });
+
+  // Check URL query parameters for direct material viewer launch
+  useEffect(() => {
+    const matIdParam = searchParams.get('materialId');
+    if (matIdParam) {
+      setViewerMaterialId(matIdParam);
+      setIsViewerOpen(true);
+    }
+  }, [searchParams]);
 
   if (isCourseLoading) {
     return (
@@ -242,6 +271,20 @@ export const CourseDetailPage: React.FC = () => {
             <PlayCircle className="w-4 h-4 mr-1.5" />
             Resume Tutoring
           </Button>
+
+          <Button
+            variant="outline"
+            size="lg"
+            className="w-full flex items-center justify-center gap-2 border-indigo-200 dark:border-indigo-800 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-950/40"
+            onClick={() => {
+              setStudyToolsMaterialId(undefined);
+              setStudyToolsTab('summary');
+              setStudyToolsOpen(true);
+            }}
+          >
+            <Sparkles className="w-4 h-4" />
+            Course Study Tools
+          </Button>
         </div>
       </div>
 
@@ -258,6 +301,42 @@ export const CourseDetailPage: React.FC = () => {
 
         {/* Tab 1: Learning Materials Library (Module 4 & 5 Core UI) */}
         <TabsContent value="materials" className="space-y-6 pt-4">
+          {/* Recently Viewed in this Course Banner */}
+          {recentMaterials && recentMaterials.filter((r) => r.courseId === courseId).length > 0 && (
+            <div className="p-4 rounded-xl bg-indigo-50/70 dark:bg-indigo-950/40 border border-indigo-200/80 dark:border-indigo-800/80 flex items-center justify-between gap-4">
+              <div className="flex items-center gap-2.5 min-w-0 text-xs">
+                <Clock className="w-4 h-4 text-indigo-600 dark:text-indigo-400 shrink-0" />
+                <div className="truncate">
+                  <span className="font-semibold text-slate-900 dark:text-slate-100 mr-2">
+                    Recent Study Position:
+                  </span>
+                  <span className="text-slate-600 dark:text-slate-300">
+                    {recentMaterials.find((r) => r.courseId === courseId)?.materialTitle}
+                  </span>
+                  {recentMaterials.find((r) => r.courseId === courseId)?.lastPosition?.page && (
+                    <span className="text-indigo-600 dark:text-indigo-400 font-semibold ml-2">
+                      (Page {recentMaterials.find((r) => r.courseId === courseId)?.lastPosition?.page})
+                    </span>
+                  )}
+                </div>
+              </div>
+              <Button
+                variant="primary"
+                size="sm"
+                onClick={() => {
+                  const rec = recentMaterials.find((r) => r.courseId === courseId);
+                  if (rec) {
+                    setViewerMaterialId(rec.materialId);
+                    setIsViewerOpen(true);
+                  }
+                }}
+                className="text-xs shrink-0 shadow-xs"
+              >
+                Continue Reading
+              </Button>
+            </div>
+          )}
+
           {/* Material Uploader */}
           <MaterialUploader
             courseId={courseId}
@@ -337,19 +416,48 @@ export const CourseDetailPage: React.FC = () => {
                       </div>
 
                       {/* Action buttons */}
-                      <div className="flex items-center gap-2 self-end sm:self-auto">
+                      <div className="flex items-center gap-2 self-end sm:self-auto flex-wrap">
                         {mat.status === 'indexed' && (
-                          <Button
-                            variant="secondary"
-                            size="sm"
-                            onClick={() => {
-                              setPreviewMaterial(mat);
-                              setIsPreviewOpen(true);
-                            }}
-                          >
-                            <Eye className="w-3.5 h-3.5 mr-1" />
-                            Preview
-                          </Button>
+                          <>
+                            <Button
+                              variant="primary"
+                              size="sm"
+                              onClick={() => {
+                                setViewerMaterialId(mat.id);
+                                setIsViewerOpen(true);
+                              }}
+                              className="text-xs shadow-xs"
+                            >
+                              <BookOpen className="w-3.5 h-3.5 mr-1" />
+                              Viewer
+                            </Button>
+
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => {
+                                setStudyToolsMaterialId(mat.id);
+                                setStudyToolsTab('summary');
+                                setStudyToolsOpen(true);
+                              }}
+                              className="text-xs"
+                            >
+                              <Sparkles className="w-3.5 h-3.5 mr-1" />
+                              Study Tools
+                            </Button>
+
+                            <Button
+                              variant="secondary"
+                              size="sm"
+                              onClick={() => {
+                                setPreviewMaterial(mat);
+                                setIsPreviewOpen(true);
+                              }}
+                            >
+                              <Eye className="w-3.5 h-3.5 mr-1" />
+                              Preview
+                            </Button>
+                          </>
                         )}
 
                         <Button
@@ -454,6 +562,30 @@ export const CourseDetailPage: React.FC = () => {
           setIsPreviewOpen(false);
           setPreviewMaterial(null);
         }}
+      />
+
+      {/* Material Interactive Viewer Modal */}
+      <MaterialViewerModal
+        materialId={viewerMaterialId}
+        isOpen={isViewerOpen}
+        onClose={() => {
+          setIsViewerOpen(false);
+          setViewerMaterialId(null);
+        }}
+        onOpenStudyTools={(matId, tab) => {
+          setStudyToolsMaterialId(matId);
+          setStudyToolsTab(tab);
+          setStudyToolsOpen(true);
+        }}
+      />
+
+      {/* Study Tools Modal (AI Summaries, Adaptive Flashcards, Notebook) */}
+      <StudyToolsModal
+        courseId={courseId}
+        materialId={studyToolsMaterialId}
+        isOpen={studyToolsOpen}
+        onClose={() => setStudyToolsOpen(false)}
+        initialTab={studyToolsTab}
       />
     </div>
   );

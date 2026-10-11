@@ -41,6 +41,14 @@ import { TutorService } from './modules/tutor/tutor.service.js';
 import { createTutorRoutes } from './modules/tutor/tutor.routes.js';
 import { AssessmentService } from './modules/assessment/assessment.service.js';
 import { createAssessmentRoutes } from './modules/assessment/assessment.routes.js';
+import { AnalyticsService } from './modules/analytics/analytics.service.js';
+import { createAnalyticsRoutes } from './modules/analytics/analytics.routes.js';
+import { SearchService } from './modules/search/search.service.js';
+import { createSearchRoutes } from './modules/search/search.routes.js';
+import { MaterialViewerService } from './modules/material-viewer/material-viewer.service.js';
+import { createMaterialViewerRoutes } from './modules/material-viewer/material-viewer.routes.js';
+import { StudyToolsService } from './modules/study-tools/study-tools.service.js';
+import { createStudyToolsRoutes } from './modules/study-tools/study-tools.routes.js';
 
 
 export interface AppOptions {
@@ -59,6 +67,10 @@ export interface AppOptions {
   ragService?: RagService;
   tutorService?: TutorService;
   assessmentService?: AssessmentService;
+  analyticsService?: AnalyticsService;
+  searchService?: SearchService;
+  materialViewerService?: MaterialViewerService;
+  studyToolsService?: StudyToolsService;
   disableRequestLogging?: boolean;
 }
 
@@ -174,6 +186,18 @@ export function createApp(options?: AppOptions) {
       aiProvider,
     });
 
+  const analyticsService =
+    options?.analyticsService || new AnalyticsService();
+
+  const searchService =
+    options?.searchService || new SearchService(vectorService, embeddingProvider);
+
+  const materialViewerService =
+    options?.materialViewerService || new MaterialViewerService();
+
+  const studyToolsService =
+    options?.studyToolsService || new StudyToolsService(ragService, aiProvider);
+
   // Mount API v1 routes
   app.register(createHealthRoutes({ healthService }), { prefix: '/api/v1' });
   app.register(createAuthRoutes({ authService, emailService }), { prefix: '/api/v1' });
@@ -187,6 +211,10 @@ export function createApp(options?: AppOptions) {
   app.register(createRagRoutes({ ragService }), { prefix: '/api/v1' });
   app.register(createTutorRoutes({ tutorService }), { prefix: '/api/v1' });
   app.register(createAssessmentRoutes({ assessmentService }), { prefix: '/api/v1' });
+  app.register(createAnalyticsRoutes({ analyticsService }), { prefix: '/api/v1' });
+  app.register(createSearchRoutes({ searchService }), { prefix: '/api/v1' });
+  app.register(createMaterialViewerRoutes({ materialViewerService }), { prefix: '/api/v1' });
+  app.register(createStudyToolsRoutes({ studyToolsService }), { prefix: '/api/v1' });
 
 
   // Root health probe convenience route

@@ -31,6 +31,21 @@ import type {
   GenerateAssessmentDto,
   QuestionSubmission,
   TopicMastery,
+  StudentAnalyticsSummary,
+  TopicMasteryAnalytics,
+  AssessmentTrendPoint,
+  StudyRecommendation,
+  StudyGoal,
+  StudyPlan,
+  LearningEvent,
+  GlobalSearchResponse,
+  MaterialContentDetails,
+  RecentMaterial,
+  StudyToolNote,
+  GroundedSummaryRequest,
+  GroundedSummaryResponse,
+  GroundedFlashcardsRequest,
+  GroundedFlashcardsResponse,
 } from '@omnitutor/shared';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:4000/api/v1';
@@ -522,6 +537,205 @@ export class ApiClient {
     courseId: string
   ): Promise<ApiResponse<AssessmentAttempt[]>> {
     return this.request<AssessmentAttempt[]>(`/courses/${courseId}/assessments/attempts`);
+  }
+
+  // ==========================================
+  // Module 9: Cognitive Analytics & Study Plans
+  // ==========================================
+
+  public async getAnalyticsSummary(
+    timezone = 'UTC'
+  ): Promise<ApiResponse<StudentAnalyticsSummary>> {
+    return this.request<StudentAnalyticsSummary>(`/analytics/summary?timezone=${encodeURIComponent(timezone)}`);
+  }
+
+  public async getTopicMasteryAnalytics(
+    courseId?: string
+  ): Promise<ApiResponse<TopicMasteryAnalytics[]>> {
+    const query = courseId ? `?courseId=${encodeURIComponent(courseId)}` : '';
+    return this.request<TopicMasteryAnalytics[]>(`/analytics/topics${query}`);
+  }
+
+  public async recordLearningEvent(
+    payload: {
+      eventType: string;
+      courseId?: string;
+      materialId?: string;
+      topic?: string;
+      durationSeconds?: number;
+      metadata?: Record<string, unknown>;
+      idempotencyKey?: string;
+    }
+  ): Promise<ApiResponse<LearningEvent>> {
+    return this.request<LearningEvent>('/analytics/events', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  public async getActivityHistory(
+    query?: { courseId?: string; eventType?: string; from?: string; to?: string; page?: number; limit?: number }
+  ): Promise<ApiResponse<{ items: LearningEvent[]; total: number; page: number; limit: number; totalPages: number }>> {
+    const params = new URLSearchParams();
+    if (query?.courseId) params.append('courseId', query.courseId);
+    if (query?.eventType) params.append('eventType', query.eventType);
+    if (query?.from) params.append('from', query.from);
+    if (query?.to) params.append('to', query.to);
+    if (query?.page) params.append('page', String(query.page));
+    if (query?.limit) params.append('limit', String(query.limit));
+    const qs = params.toString() ? `?${params.toString()}` : '';
+    return this.request(`/analytics/activity${qs}`);
+  }
+
+  public async getAssessmentTrends(
+    courseId?: string
+  ): Promise<ApiResponse<AssessmentTrendPoint[]>> {
+    const query = courseId ? `?courseId=${encodeURIComponent(courseId)}` : '';
+    return this.request<AssessmentTrendPoint[]>(`/analytics/assessment-trends${query}`);
+  }
+
+  public async getPersonalizedRecommendations(): Promise<ApiResponse<StudyRecommendation[]>> {
+    return this.request<StudyRecommendation[]>('/analytics/recommendations');
+  }
+
+  public async getStudyGoal(): Promise<ApiResponse<StudyGoal>> {
+    return this.request<StudyGoal>('/analytics/study-goals');
+  }
+
+  public async setStudyGoal(payload: Partial<StudyGoal>): Promise<ApiResponse<StudyGoal>> {
+    return this.request<StudyGoal>('/analytics/study-goals', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  public async getStudyPlan(courseId?: string): Promise<ApiResponse<StudyPlan | null>> {
+    const query = courseId ? `?courseId=${encodeURIComponent(courseId)}` : '';
+    return this.request<StudyPlan | null>(`/analytics/study-plan${query}`);
+  }
+
+  public async generateStudyPlan(payload: {
+    courseId: string;
+    weeklyAvailableHours?: number;
+    targetWeeks?: number;
+    scheduleType?: string;
+  }): Promise<ApiResponse<StudyPlan>> {
+    return this.request<StudyPlan>('/analytics/study-plan/generate', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  public async updateStudyPlanMilestone(
+    planId: string,
+    milestoneId: string,
+    payload: { completed?: boolean; title?: string; description?: string; estimatedHours?: number }
+  ): Promise<ApiResponse<StudyPlan>> {
+    return this.request<StudyPlan>(`/analytics/study-plan/${planId}/milestones/${milestoneId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  // ==========================================
+  // Module 10: Global Search & Material Viewer
+  // ==========================================
+
+  public async globalSearch(
+    options: { q: string; category?: string; courseId?: string; limit?: number; offset?: number; hybrid?: boolean },
+    signal?: AbortSignal
+  ): Promise<ApiResponse<GlobalSearchResponse>> {
+    const params = new URLSearchParams();
+    params.append('q', options.q);
+    if (options.category) params.append('category', options.category);
+    if (options.courseId) params.append('courseId', options.courseId);
+    if (options.limit) params.append('limit', String(options.limit));
+    if (options.offset) params.append('offset', String(options.offset));
+    if (options.hybrid !== undefined) params.append('hybrid', String(options.hybrid));
+
+    return this.request<GlobalSearchResponse>(`/search?${params.toString()}`, { signal });
+  }
+
+  public async getMaterialViewerContent(
+    materialId: string
+  ): Promise<ApiResponse<MaterialContentDetails>> {
+    return this.request<MaterialContentDetails>(`/materials/${materialId}/viewer-content`);
+  }
+
+  public async recordRecentMaterialView(
+    materialId: string,
+    lastPosition?: { page?: number; timestamp?: number }
+  ): Promise<ApiResponse<RecentMaterial>> {
+    return this.request<RecentMaterial>(`/materials/${materialId}/recent`, {
+      method: 'POST',
+      body: JSON.stringify({ lastPosition }),
+    });
+  }
+
+  public async getRecentMaterials(limit = 10): Promise<ApiResponse<RecentMaterial[]>> {
+    return this.request<RecentMaterial[]>(`/materials/recent?limit=${limit}`);
+  }
+
+  public async generateGroundedSummary(
+    payload: GroundedSummaryRequest
+  ): Promise<ApiResponse<GroundedSummaryResponse>> {
+    return this.request<GroundedSummaryResponse>('/study-tools/summaries/generate', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  public async generateGroundedFlashcards(
+    payload: GroundedFlashcardsRequest
+  ): Promise<ApiResponse<GroundedFlashcardsResponse>> {
+    return this.request<GroundedFlashcardsResponse>('/study-tools/flashcards/generate', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  public async getStudyNotes(
+    filters?: { courseId?: string; category?: string; tag?: string }
+  ): Promise<ApiResponse<StudyToolNote[]>> {
+    const params = new URLSearchParams();
+    if (filters?.courseId) params.append('courseId', filters.courseId);
+    if (filters?.category) params.append('category', filters.category);
+    if (filters?.tag) params.append('tag', filters.tag);
+    const qs = params.toString() ? `?${params.toString()}` : '';
+    return this.request<StudyToolNote[]>(`/study-tools/notes${qs}`);
+  }
+
+  public async createStudyNote(
+    payload: {
+      courseId: string;
+      category?: string;
+      title: string;
+      content: string;
+      tags?: string[];
+      citations?: unknown[];
+      flashcardData?: { front: string; back: string };
+    }
+  ): Promise<ApiResponse<StudyToolNote>> {
+    return this.request<StudyToolNote>('/study-tools/notes', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  public async updateStudyNote(
+    id: string,
+    payload: { title?: string; content?: string; tags?: string[]; category?: string }
+  ): Promise<ApiResponse<StudyToolNote>> {
+    return this.request<StudyToolNote>(`/study-tools/notes/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  public async deleteStudyNote(id: string): Promise<ApiResponse<{ deleted: boolean }>> {
+    return this.request<{ deleted: boolean }>(`/study-tools/notes/${id}`, {
+      method: 'DELETE',
+    });
   }
 }
 

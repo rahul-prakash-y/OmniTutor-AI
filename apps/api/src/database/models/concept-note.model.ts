@@ -5,13 +5,15 @@ export interface IConceptNoteDocument extends Document {
   courseId: mongoose.Types.ObjectId;
   userId: mongoose.Types.ObjectId;
   conversationId?: mongoose.Types.ObjectId;
+  category: 'explanation' | 'revision' | 'summary' | 'flashcard';
   title: string;
   content: string;
   citations: SourceCitation[];
   tags: string[];
+  flashcardData?: { front: string; back: string };
   createdAt: Date;
   updatedAt: Date;
-  toResponse(): ConceptNote;
+  toResponse(): ConceptNote & { category?: string; flashcardData?: { front: string; back: string } };
 }
 
 const ConceptNoteSchema = new Schema<IConceptNoteDocument>(
@@ -33,6 +35,12 @@ const ConceptNoteSchema = new Schema<IConceptNoteDocument>(
       ref: 'Conversation',
       required: false,
     },
+    category: {
+      type: String,
+      enum: ['explanation', 'revision', 'summary', 'flashcard'],
+      default: 'explanation',
+      index: true,
+    },
     title: {
       type: String,
       required: true,
@@ -42,7 +50,7 @@ const ConceptNoteSchema = new Schema<IConceptNoteDocument>(
     content: {
       type: String,
       required: true,
-      maxlength: 20000,
+      maxlength: 30000,
     },
     citations: {
       type: Schema.Types.Mixed,
@@ -52,6 +60,10 @@ const ConceptNoteSchema = new Schema<IConceptNoteDocument>(
       type: [String],
       default: [],
     },
+    flashcardData: {
+      front: { type: String, maxlength: 1000 },
+      back: { type: String, maxlength: 2000 },
+    },
   },
   {
     timestamps: true,
@@ -59,17 +71,20 @@ const ConceptNoteSchema = new Schema<IConceptNoteDocument>(
 );
 
 ConceptNoteSchema.index({ userId: 1, courseId: 1, createdAt: -1 });
+ConceptNoteSchema.index({ userId: 1, category: 1, createdAt: -1 });
 
-ConceptNoteSchema.methods.toResponse = function (): ConceptNote {
+ConceptNoteSchema.methods.toResponse = function (): ConceptNote & { category?: string; flashcardData?: { front: string; back: string } } {
   return {
     id: this._id.toString(),
     userId: this.userId.toString(),
     courseId: this.courseId.toString(),
     conversationId: this.conversationId ? this.conversationId.toString() : undefined,
+    category: this.category || 'explanation',
     title: this.title,
     content: this.content,
     citations: this.citations || [],
     tags: this.tags || [],
+    flashcardData: this.flashcardData,
     createdAt: this.createdAt.toISOString(),
     updatedAt: this.updatedAt.toISOString(),
   };

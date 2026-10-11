@@ -9,4 +9,8 @@ export * from './concept-note.model.js';
 export * from './assessment.model.js';
 export * from './assessment-attempt.model.js';
 export * from './topic-mastery.model.js';
+export * from './learning-event.model.js';
+export * from './study-goal.model.js';
+export * from './study-plan.model.js';
+export * from './recent-material.model.js';
 

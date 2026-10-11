@@ -4,6 +4,8 @@ import { Button } from '../components/ui/Button';
 import { Badge } from '../components/ui/Badge';
 import { Dialog } from '../components/ui/Dialog';
 import { CitationPopover } from '../components/CitationPopover';
+import { MaterialViewerModal } from '../components/MaterialViewerModal';
+import { StudyToolsModal } from '../components/StudyToolsModal';
 import { toast } from '../stores/useToastStore';
 import { apiClient } from '../services/apiClient';
 import type {
@@ -69,6 +71,12 @@ export const TutorPage: React.FC = () => {
   const [copiedCodeId, setCopiedCodeId] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
+
+  // Material Viewer & Study Tools state
+  const [viewerMaterialId, setViewerMaterialId] = useState<string | null>(null);
+  const [isViewerOpen, setIsViewerOpen] = useState(false);
+  const [studyToolsOpen, setStudyToolsOpen] = useState(false);
+  const [studyToolsTab, setStudyToolsTab] = useState<'summary' | 'flashcards' | 'notes'>('summary');
 
   // 1. Fetch available courses
   useEffect(() => {
@@ -425,7 +433,15 @@ export const TutorPage: React.FC = () => {
               <Compass className="w-3 h-3 text-indigo-500" /> Sources:
             </span>
             {msg.citations.map((cite, idx) => (
-              <CitationPopover key={cite.chunkId || idx} citation={cite} index={idx} />
+              <CitationPopover
+                key={cite.chunkId || idx}
+                citation={cite}
+                index={idx}
+                onOpenMaterial={(matId) => {
+                  setViewerMaterialId(matId);
+                  setIsViewerOpen(true);
+                }}
+              />
             ))}
           </div>
         )}
@@ -449,7 +465,16 @@ export const TutorPage: React.FC = () => {
             String(cIdx + 1) === citeKey
         );
         if (found) {
-          return <CitationPopover key={idx} citation={found} />;
+          return (
+            <CitationPopover
+              key={idx}
+              citation={found}
+              onOpenMaterial={(matId) => {
+                setViewerMaterialId(matId);
+                setIsViewerOpen(true);
+              }}
+            />
+          );
         }
       }
       return piece;
@@ -510,6 +535,19 @@ export const TutorPage: React.FC = () => {
           >
             <Bookmark className="w-3.5 h-3.5 text-indigo-500" />
             <span>Notes ({conceptNotes.length})</span>
+          </Button>
+
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              setStudyToolsTab('summary');
+              setStudyToolsOpen(true);
+            }}
+            className="text-xs flex items-center gap-1.5 border-indigo-200 dark:border-indigo-800 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-950/40"
+          >
+            <Sparkles className="w-3.5 h-3.5" />
+            <span>Study Tools</span>
           </Button>
         </div>
       </div>
@@ -994,6 +1032,30 @@ export const TutorPage: React.FC = () => {
           </div>
         </div>
       </Dialog>
+
+      {/* Material Interactive Viewer Modal */}
+      <MaterialViewerModal
+        materialId={viewerMaterialId}
+        isOpen={isViewerOpen}
+        onClose={() => {
+          setIsViewerOpen(false);
+          setViewerMaterialId(null);
+        }}
+        onOpenStudyTools={(matId, tab) => {
+          setViewerMaterialId(matId);
+          setStudyToolsTab(tab);
+          setStudyToolsOpen(true);
+        }}
+      />
+
+      {/* Study Tools Modal (Grounded Summaries, Adaptive Flashcards, Notebook) */}
+      <StudyToolsModal
+        courseId={selectedCourseId}
+        materialId={viewerMaterialId || undefined}
+        isOpen={studyToolsOpen}
+        onClose={() => setStudyToolsOpen(false)}
+        initialTab={studyToolsTab}
+      />
     </div>
   );
 };
