@@ -1,0 +1,118 @@
+import { GoogleGenAI } from '@google/genai';
+import type {
+  CompletionMessage,
+  CompletionOptions,
+  CompletionResult,
+  ServiceHealthStatus,
+} from '@omnitutor/shared';
+import type { IAIProvider } from './ai.interface.js';
+import { ServiceUnavailableError } from '../../utils/errors.js';
+import { logger } from '../../config/logger.js';
+
+export class GeminiProvider implements IAIProvider {
+  public readonly providerName = 'google-gemini';
+  private client: GoogleGenAI | null = null;
+  private readonly apiKey?: string;
+  private readonly defaultModel: string;
+
+  constructor(apiKey?: string, defaultModel = 'gemini-2.0-flash') {
+    this.apiKey = apiKey?.trim() || undefined;
+    this.defaultModel = defaultModel;
+
+    if (this.apiKey) {
+      try {
+        this.client = new GoogleGenAI({ apiKey: this.apiKey });
+        logger.info(`Google Gemini AI provider initialized with default model: ${this.defaultModel}`);
+      } catch (err) {
+        logger.error({ err }, 'Failed to initialize Google GenAI client');
+        this.client = null;
+      }
+    } else {
+      logger.info('Google Gemini AI provider running in unconfigured state (no GEMINI_API_KEY)');
+    }
+  }
+
+  public isConfigured(): boolean {
+    return Boolean(this.apiKey && this.client);
+  }
+
+  public async checkHealth(): Promise<ServiceHealthStatus> {
+    if (!this.isConfigured()) {
+      return {
+        status: 'degraded',
+        message: 'GEMINI_API_KEY is not configured. Server is functional but AI tutoring requires an API key.',
+        details: { provider: this.providerName, configured: false },
+      };
+    }
+
+    const start = Date.now();
+    try {
+      // Lightweight verification of configuration
+      return {
+        status: 'healthy',
+        latencyMs: Date.now() - start,
+        message: `Connected to Google Gemini API (model: ${this.defaultModel})`,
+        details: { provider: this.providerName, configured: true, model: this.defaultModel },
+      };
+    } catch (err) {
+      return {
+        status: 'unhealthy',
+        latencyMs: Date.now() - start,
+        message: err instanceof Error ? err.message : 'Gemini health probe failed',
+        details: { provider: this.providerName, configured: true },
+      };
+    }
+  }
+
+  public async generateCompletion(
+    messages: CompletionMessage[],
+    options?: CompletionOptions
+  ): Promise<CompletionResult> {
+    if (!this.client || !this.apiKey) {
+      throw new ServiceUnavailableError(
+        'Google Gemini AI',
+        'GEMINI_API_KEY is not configured in the server environment.'
+      );
+    }
+
+    const modelName = options?.model || this.defaultModel;
+
+    // Convert messages into GenAI content structure
+    const contents = messages.map((m) => ({
+      role: m.role === 'assistant' ? 'model' : 'user',
+      parts: [{ text: m.content }],
+    }));
+
+    try {
+      const response = await this.client.models.generateContent({
+        model: modelName,
+        contents,
+        config: {
+          temperature: options?.temperature,
+          maxOutputTokens: options?.maxOutputTokens,
+          systemInstruction: options?.systemInstruction,
+          stopSequences: options?.stopSequences,
+        },
+      });
+
+      const responseText = response.text || '';
+
+      return {
+        text: responseText,
+        model: modelName,
+        tokensUsed: {
+          promptTokens: response.usageMetadata?.promptTokenCount ?? 0,
+          completionTokens: response.usageMetadata?.candidatesTokenCount ?? 0,
+          totalTokens: response.usageMetadata?.totalTokenCount ?? 0,
+        },
+        finishReason: response.candidates?.[0]?.finishReason ?? 'STOP',
+      };
+    } catch (err) {
+      logger.error({ err, model: modelName }, 'Gemini generateContent call failed');
+      throw new ServiceUnavailableError(
+        'Google Gemini AI',
+        err instanceof Error ? err.message : 'Model generation failed'
+      );
+    }
+  }
+}

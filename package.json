@@ -1,0 +1,30 @@
+{
+  "name": "omnitutor-ai",
+  "version": "0.1.0",
+  "private": true,
+  "description": "OmniTutor AI - Personalized Tutoring & Adaptive Learning Platform",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "dev": "npm run dev --workspaces --if-present",
+    "dev:api": "npm run dev --workspace=@omnitutor/api",
+    "dev:web": "npm run dev --workspace=@omnitutor/web",
+    "build": "npm run build:shared && npm run build:api && npm run build:web",
+    "build:shared": "npm run build --workspace=@omnitutor/shared",
+    "build:api": "npm run build --workspace=@omnitutor/api",
+    "build:web": "npm run build --workspace=@omnitutor/web",
+    "test": "npm run test --workspaces --if-present",
+    "test:api": "npm run test --workspace=@omnitutor/api",
+    "test:web": "npm run test --workspace=@omnitutor/web",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "lint": "npm run lint --workspaces --if-present"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.3"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}
