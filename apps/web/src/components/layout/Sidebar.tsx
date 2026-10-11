@@ -3,151 +3,172 @@ import { NavLink } from 'react-router-dom';
 import { useAppStore } from '../../stores/useAppStore';
 import {
   LayoutDashboard,
-  MessagesSquare,
-  Activity,
-  Layers,
-  GraduationCap,
-  Sparkles,
+  BookOpen,
+  Bot,
+  Award,
+  LineChart,
+  Settings,
   ChevronLeft,
   ChevronRight,
+  Flame,
+  GraduationCap,
+  X,
 } from 'lucide-react';
-import type { TutoringMode } from '@omnitutor/shared';
+import { Badge } from '../ui/Badge';
+import { Tooltip } from '../ui/Tooltip';
 
 export const Sidebar: React.FC = () => {
-  const { sidebarOpen, toggleSidebar, activeMode, setActiveMode } = useAppStore();
+  const {
+    sidebarCollapsed,
+    toggleSidebar,
+    mobileMenuOpen,
+    setMobileMenuOpen,
+  } = useAppStore();
 
-  const navItems = [
-    {
-      to: '/',
-      label: 'Dashboard',
-      icon: LayoutDashboard,
-      badge: 'Module 1',
-    },
-    {
-      to: '/sessions',
-      label: 'Tutoring Sessions',
-      icon: MessagesSquare,
-      badge: 'Preview',
-    },
-    {
-      to: '/health',
-      label: 'System & Services',
-      icon: Activity,
-    },
-  ];
-
-  const modes: Array<{ id: TutoringMode; label: string; description: string }> = [
-    { id: 'socratic', label: 'Socratic Dialogue', description: 'Guided inquiry & reasoning' },
-    { id: 'direct', label: 'Direct Explanation', description: 'Conceptual breakdown' },
-    { id: 'quiz', label: 'Adaptive Quiz', description: 'Active recall verification' },
-    { id: 'code_review', label: 'Code & Math Tutor', description: 'Step-by-step problem solver' },
+  const navLinks = [
+    { to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
+    { to: '/courses', label: 'My Courses', icon: BookOpen },
+    { to: '/tutor', label: 'AI Tutor', icon: Bot, badge: 'Socratic' },
+    { to: '/assessments', label: 'Assessments', icon: Award },
+    { to: '/progress', label: 'Progress', icon: LineChart },
+    { to: '/settings', label: 'Settings', icon: Settings },
   ];
 
   return (
-    <aside
-      id="app-sidebar"
-      className={`fixed lg:static inset-y-0 left-0 z-30 flex flex-col justify-between glass-panel border-r border-surface-border/80 transition-all duration-300 ${
-        sidebarOpen ? 'w-64' : 'w-20'
-      } ${sidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}`}
-    >
-      <div className="p-4 space-y-6">
-        {/* Toggle Button for Desktop */}
-        <div className="hidden lg:flex items-center justify-between pb-2 border-b border-surface-border">
-          <span
-            className={`text-xs font-semibold uppercase tracking-wider text-slate-400 ${
-              !sidebarOpen && 'hidden'
-            }`}
-          >
-            Navigation
-          </span>
-          <button
-            id="btn-collapse-sidebar"
-            onClick={toggleSidebar}
-            aria-label={sidebarOpen ? 'Collapse sidebar' : 'Expand sidebar'}
-            className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-surface-hover transition-colors ml-auto"
-          >
-            {sidebarOpen ? <ChevronLeft className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
-          </button>
-        </div>
+    <>
+      {/* Mobile Drawer Overlay */}
+      {mobileMenuOpen && (
+        <div
+          className="fixed inset-0 z-40 bg-slate-900/60 dark:bg-black/75 backdrop-blur-xs lg:hidden transition-opacity"
+          onClick={() => setMobileMenuOpen(false)}
+          aria-hidden="true"
+        />
+      )}
 
-        {/* Primary Navigation */}
-        <nav className="space-y-1.5" aria-label="Main Navigation">
-          {navItems.map((item) => (
-            <NavLink
-              key={item.to}
-              to={item.to}
-              id={`nav-link-${item.label.toLowerCase().replace(/\s+/g, '-')}`}
-              className={({ isActive }) =>
-                `flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all ${
-                  isActive
-                    ? 'bg-brand-600/20 text-brand-300 border border-brand-500/30 shadow-sm'
-                    : 'text-slate-400 hover:text-slate-200 hover:bg-surface-hover'
-                }`
-              }
-            >
-              <item.icon className="w-5 h-5 flex-shrink-0 text-brand-400" />
-              {sidebarOpen && (
-                <div className="flex items-center justify-between flex-1 truncate">
-                  <span>{item.label}</span>
-                  {item.badge && (
-                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-surface-card border border-surface-border text-slate-400">
-                      {item.badge}
-                    </span>
-                  )}
+      {/* Main Sidebar (Desktop fixed/sticky, Mobile fixed drawer) */}
+      <aside
+        id="app-sidebar"
+        className={`fixed top-0 bottom-0 left-0 z-50 lg:z-20 flex flex-col justify-between bg-white dark:bg-slate-900 border-r border-slate-200/80 dark:border-slate-800/80 transition-all duration-200 ${
+          sidebarCollapsed ? 'lg:w-20' : 'lg:w-64'
+        } ${
+          mobileMenuOpen
+            ? 'w-64 translate-x-0'
+            : '-translate-x-full lg:translate-x-0'
+        }`}
+      >
+        <div className="flex flex-col flex-1 overflow-hidden">
+          {/* Logo & Brand Header */}
+          <div className="h-16 flex items-center justify-between px-4 border-b border-slate-200/80 dark:border-slate-800/80">
+            <div className="flex items-center gap-2.5 overflow-hidden">
+              <div className="w-9 h-9 rounded-xl bg-indigo-600 text-white flex items-center justify-center font-bold shrink-0 shadow-sm">
+                <GraduationCap className="w-5 h-5 text-white" />
+              </div>
+              {(!sidebarCollapsed || mobileMenuOpen) && (
+                <div className="flex flex-col truncate">
+                  <span className="font-display font-bold text-sm tracking-tight text-slate-900 dark:text-white">
+                    OmniTutor AI
+                  </span>
+                  <span className="text-[10px] text-slate-400 font-medium">
+                    Adaptive Workspace
+                  </span>
                 </div>
               )}
-            </NavLink>
-          ))}
-        </nav>
-
-        {/* Pedagogy Modes Selector */}
-        {sidebarOpen && (
-          <div className="pt-4 border-t border-surface-border/60">
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-xs font-semibold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
-                <Sparkles className="w-3.5 h-3.5 text-brand-400" />
-                Tutoring Mode
-              </span>
             </div>
-            <div className="space-y-1.5">
-              {modes.map((m) => (
-                <button
-                  key={m.id}
-                  id={`btn-mode-${m.id}`}
-                  onClick={() => setActiveMode(m.id)}
-                  className={`w-full text-left p-2 rounded-xl text-xs transition-all ${
-                    activeMode === m.id
-                      ? 'bg-brand-950/80 border border-brand-500/40 text-brand-200 font-medium'
-                      : 'text-slate-400 hover:bg-surface-card/60 hover:text-slate-300'
-                  }`}
+
+            {/* Mobile close button */}
+            <button
+              onClick={() => setMobileMenuOpen(false)}
+              className="lg:hidden text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 p-1 rounded"
+              aria-label="Close menu"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
+
+          {/* Navigation Links */}
+          <nav aria-label="Sidebar Navigation" className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
+            {navLinks.map((item) => {
+              const linkContent = (
+                <NavLink
+                  key={item.to}
+                  to={item.to}
+                  onClick={() => setMobileMenuOpen(false)}
+                  id={`sidebar-link-${item.label.toLowerCase().replace(/\s+/g, '-')}`}
+                  className={({ isActive }) =>
+                    `flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-semibold transition-all duration-150 ${
+                      isActive
+                        ? 'bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 shadow-2xs font-bold'
+                        : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800/50'
+                    }`
+                  }
                 >
-                  <div className="font-semibold">{m.label}</div>
-                  <div className="text-[10px] text-slate-500 truncate">{m.description}</div>
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
-      </div>
+                  <item.icon className="w-4 h-4 shrink-0" />
+                  {(!sidebarCollapsed || mobileMenuOpen) && (
+                    <div className="flex items-center justify-between flex-1 truncate">
+                      <span className="truncate">{item.label}</span>
+                      {item.badge && (
+                        <Badge size="sm" variant="brand">
+                          {item.badge}
+                        </Badge>
+                      )}
+                    </div>
+                  )}
+                </NavLink>
+              );
 
-      {/* Monorepo Architecture Badge */}
-      <div className="p-4 border-t border-surface-border">
-        {sidebarOpen ? (
-          <div className="glass-panel rounded-xl p-3 border border-surface-border/60 text-xs">
-            <div className="flex items-center gap-2 text-slate-300 font-semibold mb-1">
-              <Layers className="w-4 h-4 text-accent-cyan" />
-              <span>Full-Stack Monorepo</span>
+              if (sidebarCollapsed && !mobileMenuOpen) {
+                return (
+                  <Tooltip key={item.to} content={item.label} position="right">
+                    {linkContent}
+                  </Tooltip>
+                );
+              }
+
+              return linkContent;
+            })}
+          </nav>
+        </div>
+
+        {/* Footer: Learning Streak & Collapse Toggle */}
+        <div className="p-3 border-t border-slate-200/80 dark:border-slate-800/80 space-y-3">
+          {(!sidebarCollapsed || mobileMenuOpen) ? (
+            <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200/70 dark:border-slate-700/60">
+              <div className="flex items-center justify-between text-xs font-semibold text-slate-800 dark:text-slate-200">
+                <span className="flex items-center gap-1.5">
+                  <Flame className="w-4 h-4 text-amber-500 fill-amber-500" />
+                  5-Day Streak
+                </span>
+                <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-bold">
+                  Active
+                </span>
+              </div>
+              <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-1">
+                Study 15 min today to keep your multiplier.
+              </p>
             </div>
-            <p className="text-[11px] text-slate-400 leading-relaxed">
-              React + Fastify + MongoDB + Qdrant + Gemini AI abstraction.
-            </p>
-          </div>
-        ) : (
-          <div className="flex justify-center" title="OmniTutor AI Monorepo">
-            <GraduationCap className="w-5 h-5 text-brand-400" />
-          </div>
-        )}
-      </div>
-    </aside>
+          ) : (
+            <div className="flex justify-center" title="5-Day Streak Active">
+              <Flame className="w-5 h-5 text-amber-500 fill-amber-500" />
+            </div>
+          )}
+
+          {/* Collapse Toggle Button (Desktop only) */}
+          <button
+            onClick={toggleSidebar}
+            aria-label={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+            className="hidden lg:flex w-full items-center justify-center p-2 rounded-lg text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+          >
+            {sidebarCollapsed ? (
+              <ChevronRight className="w-4 h-4" />
+            ) : (
+              <div className="flex items-center gap-2 text-xs font-medium">
+                <ChevronLeft className="w-4 h-4" />
+                <span>Collapse Sidebar</span>
+              </div>
+            )}
+          </button>
+        </div>
+      </aside>
+    </>
   );
 };

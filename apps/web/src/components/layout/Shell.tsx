@@ -1,32 +1,35 @@
 import React from 'react';
 import { Outlet } from 'react-router-dom';
-import { Navbar } from './Navbar';
+import { Header } from './Header';
 import { Sidebar } from './Sidebar';
+import { GlobalSearchModal } from './GlobalSearchModal';
+import { ToastContainer } from '../ui/Toast';
 import { useAppStore } from '../../stores/useAppStore';
 
 export const Shell: React.FC = () => {
-  const { sidebarOpen, setSidebarOpen } = useAppStore();
+  const { sidebarCollapsed } = useAppStore();
 
   return (
-    <div className="min-h-screen flex flex-col bg-surface-dark text-slate-100">
-      <Navbar />
+    <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 flex flex-col font-sans transition-colors duration-150">
+      {/* Sidebar */}
+      <Sidebar />
 
-      <div className="flex-1 flex overflow-hidden">
-        {/* Mobile backdrop */}
-        {sidebarOpen && (
-          <div
-            className="fixed inset-0 z-20 bg-black/60 backdrop-blur-sm lg:hidden"
-            onClick={() => setSidebarOpen(false)}
-            aria-hidden="true"
-          />
-        )}
+      {/* Main Content Area */}
+      <div
+        className={`flex-1 flex flex-col transition-all duration-200 ${
+          sidebarCollapsed ? 'lg:pl-20' : 'lg:pl-64'
+        }`}
+      >
+        <Header />
 
-        <Sidebar />
-
-        <main id="main-content" className="flex-1 overflow-y-auto px-4 py-6 lg:px-8 max-w-7xl mx-auto w-full">
+        <main id="main-content" className="flex-1 p-4 sm:p-6 lg:p-8 max-w-7xl mx-auto w-full">
           <Outlet />
         </main>
       </div>
+
+      {/* Modals & Portals */}
+      <GlobalSearchModal />
+      <ToastContainer />
     </div>
   );
 };
