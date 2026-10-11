@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -7,12 +7,13 @@ import { Input } from '../components/ui/Input';
 import { Button } from '../components/ui/Button';
 import { Dialog } from '../components/ui/Dialog';
 import { toast } from '../stores/useToastStore';
-import { useAppStore } from '../stores/useAppStore';
-import { Mail, Lock, Eye, EyeOff, ArrowRight } from 'lucide-react';
+import { useAuthStore } from '../stores/useAuthStore';
+import { apiClient } from '../services/apiClient';
+import { Mail, Lock, Eye, EyeOff, ArrowRight, AlertCircle } from 'lucide-react';
 
 const LoginSchema = z.object({
   email: z.string().email('Please enter a valid email address'),
-  password: z.string().min(6, 'Password must be at least 6 characters'),
+  password: z.string().min(1, 'Password is required'),
   rememberMe: z.boolean().optional(),
 });
 
@@ -23,8 +24,13 @@ export const LoginPage: React.FC = () => {
   const [forgotModalOpen, setForgotModalOpen] = useState(false);
   const [resetEmail, setResetEmail] = useState('');
   const [isResetting, setIsResetting] = useState(false);
-  const { setUserProfile } = useAppStore();
+  const [serverError, setServerError] = useState<string | null>(null);
+
+  const { login } = useAuthStore();
   const navigate = useNavigate();
+  const location = useLocation();
+
+  const fromPath = (location.state as { from?: { pathname: string } })?.from?.pathname || '/dashboard';
 
   const {
     register,
@@ -33,28 +39,44 @@ export const LoginPage: React.FC = () => {
   } = useForm<LoginFormData>({
     resolver: zodResolver(LoginSchema),
     defaultValues: {
-      email: 'rahul.prakash@omnitutor.ai',
-      password: 'password123',
+      email: '',
+      password: '',
       rememberMe: true,
     },
   });
 
   const onSubmit = async (data: LoginFormData) => {
-    // Simulate brief client authentication
-    await new Promise((r) => setTimeout(r, 600));
-    setUserProfile({ email: data.email, name: 'Rahul Prakash' });
-    toast.success('Successfully logged in! Welcome back.', 'Authentication Successful');
-    navigate('/dashboard');
+    setServerError(null);
+    const result = await login({
+      email: data.email,
+      password: data.password,
+    });
+
+    if (result.success) {
+      toast.success('Successfully logged in! Welcome back.', 'Authentication Successful');
+      navigate(fromPath, { replace: true });
+    } else {
+      setServerError(result.error || 'Authentication failed. Please check your credentials.');
+      toast.error(result.error || 'Invalid credentials.', 'Login Failed');
+    }
   };
 
   const handlePasswordReset = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!resetEmail) return;
     setIsResetting(true);
-    await new Promise((r) => setTimeout(r, 600));
-    setIsResetting(false);
-    setForgotModalOpen(false);
-    toast.info(`Password reset link sent to ${resetEmail}`, 'Reset Link Sent');
+    try {
+      const res = await apiClient.forgotPassword({ email: resetEmail });
+      setIsResetting(false);
+      setForgotModalOpen(false);
+      toast.info(
+        res.data?.message || 'If an account exists, a password reset link has been dispatched.',
+        'Reset Link Sent'
+      );
+    } catch {
+      setIsResetting(false);
+      toast.error('Unable to send password reset link. Please check your connection.');
+    }
   };
 
   return (
@@ -67,6 +89,16 @@ export const LoginPage: React.FC = () => {
           Continue your personalized cognitive learning journey
         </p>
       </div>
+
+      {serverError && (
+        <div className="p-3.5 rounded-xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900/60 flex items-start gap-2.5 text-xs text-rose-700 dark:text-rose-300">
+          <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-rose-500" />
+          <div className="flex-1">
+            <span className="font-semibold">Sign in failed: </span>
+            {serverError}
+          </div>
+        </div>
+      )}
 
       <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
         <Input

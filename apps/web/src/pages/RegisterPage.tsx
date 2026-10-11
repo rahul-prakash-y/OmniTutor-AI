@@ -6,15 +6,14 @@ import { z } from 'zod';
 import { Input } from '../components/ui/Input';
 import { Button } from '../components/ui/Button';
 import { toast } from '../stores/useToastStore';
-import { useAppStore } from '../stores/useAppStore';
-import { Mail, Lock, User, Eye, EyeOff, ArrowRight } from 'lucide-react';
-import type { UserRole } from '@omnitutor/shared';
+import { useAuthStore } from '../stores/useAuthStore';
+import { Mail, Lock, User, Eye, EyeOff, ArrowRight, AlertCircle } from 'lucide-react';
 
 const RegisterSchema = z.object({
   fullName: z.string().min(2, 'Name must be at least 2 characters'),
   email: z.string().email('Please enter a valid email address'),
-  password: z.string().min(6, 'Password must be at least 6 characters'),
-  role: z.enum(['student', 'tutor']),
+  password: z.string().min(8, 'Password must be at least 8 characters'),
+  preferredDifficulty: z.enum(['beginner', 'intermediate', 'advanced']),
   termsAccepted: z.literal(true, {
     errorMap: () => ({ message: 'You must accept the terms of service' }),
   }),
@@ -24,7 +23,8 @@ type RegisterFormData = z.infer<typeof RegisterSchema>;
 
 export const RegisterPage: React.FC = () => {
   const [showPassword, setShowPassword] = useState(false);
-  const { setUserProfile } = useAppStore();
+  const [serverError, setServerError] = useState<string | null>(null);
+  const { register: registerUser } = useAuthStore();
   const navigate = useNavigate();
 
   const {
@@ -39,22 +39,34 @@ export const RegisterPage: React.FC = () => {
       fullName: '',
       email: '',
       password: '',
-      role: 'student',
+      preferredDifficulty: 'intermediate',
       termsAccepted: true,
     },
   });
 
-  const selectedRole = watch('role');
+  const selectedDifficulty = watch('preferredDifficulty');
 
   const onSubmit = async (data: RegisterFormData) => {
-    await new Promise((r) => setTimeout(r, 600));
-    setUserProfile({
-      name: data.fullName,
+    setServerError(null);
+    const result = await registerUser({
+      fullName: data.fullName,
       email: data.email,
-      role: data.role as UserRole,
+      password: data.password,
+      preferences: {
+        preferredDifficulty: data.preferredDifficulty,
+      },
     });
-    toast.success(`Account created for ${data.fullName}!`, 'Welcome to OmniTutor');
-    navigate('/dashboard');
+
+    if (result.success) {
+      toast.success(
+        `Welcome to OmniTutor, ${data.fullName}! A verification email has been sent.`,
+        'Account Created'
+      );
+      navigate('/dashboard');
+    } else {
+      setServerError(result.error || 'Registration failed. Please check your details.');
+      toast.error(result.error || 'Registration failed.', 'Account Creation Failed');
+    }
   };
 
   return (
@@ -67,6 +79,16 @@ export const RegisterPage: React.FC = () => {
           Start personalized adaptive learning tailored to your cognitive pacing
         </p>
       </div>
+
+      {serverError && (
+        <div className="p-3.5 rounded-xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900/60 flex items-start gap-2.5 text-xs text-rose-700 dark:text-rose-300">
+          <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-rose-500" />
+          <div className="flex-1">
+            <span className="font-semibold">Registration failed: </span>
+            {serverError}
+          </div>
+        </div>
+      )}
 
       <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
         <Input
@@ -93,7 +115,7 @@ export const RegisterPage: React.FC = () => {
           id="register-password"
           label="Password"
           type={showPassword ? 'text' : 'password'}
-          placeholder="At least 6 characters"
+          placeholder="At least 8 characters"
           leadingIcon={<Lock className="w-4 h-4" />}
           trailingIcon={
             <button
@@ -109,34 +131,26 @@ export const RegisterPage: React.FC = () => {
           {...register('password')}
         />
 
-        {/* Role Segmented Selector */}
+        {/* Initial Pacing Preference */}
         <div className="space-y-1.5">
           <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 uppercase tracking-wider">
-            Primary Role
+            Starting Pacing Level
           </label>
-          <div className="grid grid-cols-2 gap-2">
-            <button
-              type="button"
-              onClick={() => setValue('role', 'student')}
-              className={`p-2.5 rounded-xl border text-xs font-semibold transition-all text-center cursor-pointer ${
-                selectedRole === 'student'
-                  ? 'bg-indigo-50 dark:bg-indigo-950/80 border-indigo-500 text-indigo-700 dark:text-indigo-300 shadow-2xs'
-                  : 'border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800'
-              }`}
-            >
-              Student / Learner
-            </button>
-            <button
-              type="button"
-              onClick={() => setValue('role', 'tutor')}
-              className={`p-2.5 rounded-xl border text-xs font-semibold transition-all text-center cursor-pointer ${
-                selectedRole === 'tutor'
-                  ? 'bg-indigo-50 dark:bg-indigo-950/80 border-indigo-500 text-indigo-700 dark:text-indigo-300 shadow-2xs'
-                  : 'border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800'
-              }`}
-            >
-              Educator / Tutor
-            </button>
+          <div className="grid grid-cols-3 gap-2">
+            {(['beginner', 'intermediate', 'advanced'] as const).map((diff) => (
+              <button
+                key={diff}
+                type="button"
+                onClick={() => setValue('preferredDifficulty', diff)}
+                className={`p-2 rounded-xl border text-xs font-semibold capitalize transition-all text-center cursor-pointer ${
+                  selectedDifficulty === diff
+                    ? 'bg-indigo-50 dark:bg-indigo-950/80 border-indigo-500 text-indigo-700 dark:text-indigo-300 shadow-2xs'
+                    : 'border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800'
+                }`}
+              >
+                {diff}
+              </button>
+            ))}
           </div>
         </div>
 

@@ -1,8 +1,11 @@
 import { createBrowserRouter, Navigate } from 'react-router-dom';
 import { Shell } from './components/layout/Shell';
 import { AuthShell } from './components/layout/AuthShell';
+import { ProtectedRoute } from './components/layout/ProtectedRoute';
 import { LoginPage } from './pages/LoginPage';
 import { RegisterPage } from './pages/RegisterPage';
+import { ResetPasswordPage } from './pages/ResetPasswordPage';
+import { VerifyEmailPage } from './pages/VerifyEmailPage';
 import { DashboardPage } from './pages/DashboardPage';
 import { CoursesPage } from './pages/CoursesPage';
 import { CourseDetailPage } from './pages/CourseDetailPage';
@@ -15,7 +18,7 @@ import { HealthStatusPage } from './pages/HealthStatusPage';
 import { NotFoundPage } from './pages/NotFoundPage';
 
 export const router = createBrowserRouter([
-  // Authentication routes
+  // Public Authentication & Onboarding routes
   {
     element: <AuthShell />,
     children: [
@@ -27,13 +30,25 @@ export const router = createBrowserRouter([
         path: '/register',
         element: <RegisterPage />,
       },
+      {
+        path: '/reset-password',
+        element: <ResetPasswordPage />,
+      },
+      {
+        path: '/verify-email',
+        element: <VerifyEmailPage />,
+      },
     ],
   },
 
-  // Main Application Shell routes
+  // Protected Application Shell routes
   {
     path: '/',
-    element: <Shell />,
+    element: (
+      <ProtectedRoute>
+        <Shell />
+      </ProtectedRoute>
+    ),
     children: [
       {
         index: true,

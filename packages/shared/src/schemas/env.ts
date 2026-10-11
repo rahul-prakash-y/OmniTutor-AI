@@ -8,6 +8,11 @@ export const ApiEnvSchema = z.object({
   HOST: z.string().default('0.0.0.0'),
   CORS_ORIGIN: z.string().default('http://localhost:5173'),
   LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace']).default('info'),
+  // Session & Security
+  SESSION_SECRET: z.string().min(32).default('omnitutor-session-secret-key-32-chars-minimum-required'),
+  COOKIE_DOMAIN: z.string().optional(),
+  APP_URL: z.string().default('http://localhost:5173'),
+  EMAIL_PROVIDER: z.enum(['mock', 'smtp', 'console']).default('mock'),
   // Database configuration
   MONGODB_URI: z.string().url().default('mongodb://localhost:27017/omnitutor'),
   // Vector store configuration

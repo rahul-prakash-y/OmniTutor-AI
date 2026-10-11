@@ -70,11 +70,27 @@ npm run dev:web
 
 ## 📡 Core API Endpoints
 
+### System Probes
 | Method | Endpoint | Description |
 |---|---|---|
 | `GET` | `/api/v1/health` | Comprehensive health check (Database, Qdrant, Gemini AI, Uptime) |
 | `GET` | `/api/v1/ready` | Kubernetes-style readiness probe (HTTP 200 when ready, HTTP 503 if dependencies down) |
 | `GET` | `/` | API service discovery and documentation links |
+
+### Authentication & Account Management (Module 3)
+| Method | Endpoint | Description | Auth Required |
+|---|---|---|---|
+| `POST` | `/api/v1/auth/register` | Register student account, create session cookie, dispatch verification email | No |
+| `POST` | `/api/v1/auth/login` | Authenticate with email and password, create HttpOnly session cookie | No |
+| `POST` | `/api/v1/auth/logout` | Revoke active session token and clear session cookie | Yes + CSRF |
+| `GET` | `/api/v1/auth/me` | Fetch authenticated user profile, session details, and CSRF token | Yes |
+| `POST` | `/api/v1/auth/forgot-password` | Request password reset email (enumeration-safe) | No |
+| `POST` | `/api/v1/auth/reset-password` | Reset password using single-use cryptographically secure token | No |
+| `POST` | `/api/v1/auth/verify-email` | Verify email address using single-use expiring token | No |
+| `GET` | `/api/v1/users/me` | Read current user learning profile and preferences | Yes |
+| `PATCH` | `/api/v1/users/me` | Update name, socratic pacing, difficulty, and audio settings | Yes + CSRF |
+| `DELETE` | `/api/v1/users/me` | Delete account, revoke all sessions, and soft-delete user data | Yes + CSRF |
+| `GET` | `/api/v1/admin/users` | List platform users (Admin role required) | Yes (`admin`) |
 
 All responses conform to the uniform envelope:
 ```json
@@ -91,11 +107,23 @@ All responses conform to the uniform envelope:
 
 ---
 
+## 🔒 Security Architecture
+
+- **Password Hashing**: Implemented with Argon2id using `@node-rs/argon2` with recommended parameters (`memoryCost: 64MB`, `timeCost: 3`, `outputLen: 32`).
+- **Session Management**: Cryptographically secure 256-bit random session tokens stored hashed in MongoDB (`Session` collection) and delivered via `HttpOnly`, `SameSite=Lax`, `Path=/` cookies with secure flags in production.
+- **CSRF Protection**: Synchronizer HMAC-based CSRF protection enforcing `x-csrf-token` on state-changing requests (`POST`, `PUT`, `PATCH`, `DELETE`) authenticated via browser cookies.
+- **Account Enumeration Defense**: Login and password reset endpoints return generic messages so malicious actors cannot discover if an email exists.
+- **Single-Use Tokens**: Verification and password reset tokens are stored as SHA-256 hashes in MongoDB with strict expiration windows (24h for verification, 1h for reset).
+- **Rate Limiting**: Integrated via `@fastify/rate-limit` protecting authentication routes against brute-force attacks.
+- **Injectable Email Provider**: `MockEmailService` stores emails in-memory with safe logging in development/test without exposing secrets. Production requires an explicitly configured transactional email service.
+
+---
+
 ## 🧪 Testing & Verification
 
 Run all test suites across the monorepo:
 ```powershell
-# Run all Vitest unit and Fastify injection tests
+# Run all Vitest unit, API injection, and web tests (35 tests)
 npm run test
 
 # Run TypeScript type check across all workspaces
@@ -113,9 +141,22 @@ npm run build
 OmniTutor-AI/
 ├── apps/
 │   ├── api/             # Fastify Backend API
+│   │   ├── src/
+│   │   │   ├── database/models/  # User & Session Mongoose models
+│   │   │   ├── modules/auth/     # Auth service & routes
+│   │   │   ├── modules/user/     # User service & routes
+│   │   │   ├── plugins/auth.ts   # Session & CSRF verification plugin
+│   │   │   └── services/email/   # Injectable email provider abstractions
 │   └── web/             # React + Vite Frontend
+│       ├── src/
+│       │   ├── components/layout/ProtectedRoute.tsx  # Auth & role gate
+│       │   ├── stores/useAuthStore.ts                # Session state & actions
+│       │   ├── pages/LoginPage.tsx                   # Interactive login
+│       │   ├── pages/RegisterPage.tsx                # Least-privilege registration
+│       │   ├── pages/ResetPasswordPage.tsx           # Token-based password reset
+│       │   └── pages/VerifyEmailPage.tsx             # Email verification view
 ├── packages/
-│   └── shared/          # Shared types and Zod validation schemas
+│   └── shared/          # Shared types, Zod schemas (Register, Login, User)
 ├── docs/
 │   ├── ARCHITECTURE.md  # Detailed architecture & data flow diagrams
 │   └── DEVELOPMENT.md   # Setup guide and developer manual
@@ -136,6 +177,10 @@ OmniTutor-AI/
 | `HOST` | `0.0.0.0` | Bind host address |
 | `CORS_ORIGIN` | `http://localhost:5173` | Allowed frontend origin |
 | `LOG_LEVEL` | `info` | Pino logging level (`fatal`, `error`, `warn`, `info`, `debug`, `trace`) |
+| `SESSION_SECRET` | *(required in prod)* | Secret key for signing session cookies and CSRF HMAC (min 32 chars) |
+| `COOKIE_DOMAIN` | *(empty)* | Optional cookie domain for production deployments |
+| `APP_URL` | `http://localhost:5173` | Base web application URL for reset/verification links |
+| `EMAIL_PROVIDER` | `mock` | Email dispatch provider (`mock`, `smtp`, `console`) |
 | `MONGODB_URI` | `mongodb://localhost:27017/omnitutor` | MongoDB connection string |
 | `QDRANT_URL` | `http://localhost:6333` | Qdrant REST URL |
 | `QDRANT_API_KEY` | *(empty)* | Optional Qdrant API key |

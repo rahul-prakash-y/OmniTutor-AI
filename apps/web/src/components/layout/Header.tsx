@@ -1,6 +1,7 @@
 import React from 'react';
 import { useLocation, Link, useNavigate } from 'react-router-dom';
 import { useAppStore } from '../../stores/useAppStore';
+import { useAuthStore } from '../../stores/useAuthStore';
 import {
   Search,
   Sun,
@@ -80,7 +81,10 @@ export const Header: React.FC = () => {
       label: 'Sign Out',
       icon: <LogOut className="w-4 h-4" />,
       destructive: true,
-      onClick: () => navigate('/login'),
+      onClick: async () => {
+        await useAuthStore.getState().logout();
+        navigate('/login');
+      },
     },
   ];
 

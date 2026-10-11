@@ -42,6 +42,24 @@ export class UnauthorizedError extends AppError {
   }
 }
 
+export class ForbiddenError extends AppError {
+  constructor(message = 'Access forbidden') {
+    super(message, 403, 'FORBIDDEN');
+  }
+}
+
+export class ConflictError extends AppError {
+  constructor(message = 'Resource conflict') {
+    super(message, 409, 'CONFLICT');
+  }
+}
+
+export class BadRequestError extends AppError {
+  constructor(message = 'Bad request') {
+    super(message, 400, 'BAD_REQUEST');
+  }
+}
+
 export class ServiceUnavailableError extends AppError {
   constructor(service: string, reason?: string) {
     super(
