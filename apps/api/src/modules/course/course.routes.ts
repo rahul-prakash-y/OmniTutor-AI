@@ -3,8 +3,12 @@ import {
   createCourseSchema,
   updateCourseSchema,
   courseFilterSchema,
+  createLearningObjectiveSchema,
   type ApiResponse,
   type Course,
+  type LearningObjective,
+  type LearningObjectiveCoverage,
+  type InstructorCourseAnalytics,
 } from '@omnitutor/shared';
 import { CourseService } from './course.service.js';
 import { ValidationError } from '../../utils/errors.js';
@@ -192,6 +196,119 @@ export function createCourseRoutes(options: CourseRouteOptions): FastifyPluginAs
         const response: ApiResponse<{ message: string }> = {
           success: true,
           data: { message: 'Course and all associated materials deleted successfully.' },
+          meta: {
+            requestId: request.id,
+            timestamp: new Date().toISOString(),
+          },
+        };
+
+        return reply.send(response);
+      }
+    );
+
+    /**
+     * POST /courses/:courseId/objectives - Create a learning objective for course
+     */
+    fastify.post<{ Params: { courseId: string }; Body: unknown }>(
+      '/courses/:courseId/objectives',
+      { preHandler: [fastify.authenticate, fastify.validateCsrf] },
+      async (request, reply) => {
+        const parsed = createLearningObjectiveSchema.safeParse(request.body);
+        if (!parsed.success) {
+          throw new ValidationError(
+            'Learning objective validation failed',
+            parsed.error.issues.map((i) => ({ field: i.path.join('.'), message: i.message }))
+          );
+        }
+
+        const objective = await courseService.createLearningObjective(
+          request.params.courseId,
+          String(request.user!._id),
+          request.user!.role,
+          parsed.data
+        );
+
+        const response: ApiResponse<LearningObjective> = {
+          success: true,
+          data: objective,
+          meta: {
+            requestId: request.id,
+            timestamp: new Date().toISOString(),
+          },
+        };
+
+        return reply.status(201).send(response);
+      }
+    );
+
+    /**
+     * GET /courses/:courseId/objectives - List learning objectives for course
+     */
+    fastify.get<{ Params: { courseId: string } }>(
+      '/courses/:courseId/objectives',
+      { preHandler: [fastify.authenticate] },
+      async (request, reply) => {
+        const objectives = await courseService.getLearningObjectives(
+          request.params.courseId,
+          String(request.user!._id),
+          request.user!.role
+        );
+
+        const response: ApiResponse<LearningObjective[]> = {
+          success: true,
+          data: objectives,
+          meta: {
+            requestId: request.id,
+            timestamp: new Date().toISOString(),
+          },
+        };
+
+        return reply.send(response);
+      }
+    );
+
+    /**
+     * GET /courses/:courseId/objectives/coverage - Objective mapping & syllabus coverage
+     */
+    fastify.get<{ Params: { courseId: string } }>(
+      '/courses/:courseId/objectives/coverage',
+      { preHandler: [fastify.authenticate] },
+      async (request, reply) => {
+        const coverage = await courseService.getLearningObjectivesCoverage(
+          request.params.courseId,
+          String(request.user!._id),
+          request.user!.role
+        );
+
+        const response: ApiResponse<LearningObjectiveCoverage[]> = {
+          success: true,
+          data: coverage,
+          meta: {
+            requestId: request.id,
+            timestamp: new Date().toISOString(),
+          },
+        };
+
+        return reply.send(response);
+      }
+    );
+
+    /**
+     * GET /courses/:courseId/instructor-analytics - Cohort report for instructors
+     */
+    fastify.get<{ Params: { courseId: string } }>(
+      '/courses/:courseId/instructor-analytics',
+      { preHandler: [fastify.authenticate] },
+      async (request, reply) => {
+        const analytics = await courseService.getInstructorCourseAnalytics(
+          request.params.courseId,
+          String(request.user!._id),
+          request.user!.role
+        );
+
+        const response: ApiResponse<InstructorCourseAnalytics> = {
+          success: true,
+          data: analytics,
           meta: {
             requestId: request.id,
             timestamp: new Date().toISOString(),

@@ -7,6 +7,7 @@ import {
   AssessmentAttemptModel,
   CourseModel,
   MaterialModel,
+  RevisionScheduleModel,
 } from '../../database/models/index.js';
 import type {
   LearningEvent,
@@ -16,6 +17,9 @@ import type {
   StudyRecommendation,
   StudyGoal,
   StudyPlan,
+  KnowledgeGap,
+  KnowledgeGapPassage,
+  RevisionScheduleItem,
 } from '@omnitutor/shared';
 
 export interface RecordEventInput {
@@ -624,6 +628,252 @@ export class AnalyticsService {
     await plan.save();
     const course = plan.courseId as any;
     return plan.toResponse(course?.title);
+  }
+
+  /**
+   * Module 13 Priority 1: Knowledge gap detection
+   * Identifies recurring errors across assessment responses and retrieves specific grounded source passages for revision.
+   */
+  async detectKnowledgeGaps(userId: string, courseId?: string): Promise<KnowledgeGap[]> {
+    const userObjectId = new mongoose.Types.ObjectId(userId);
+    const filter: Record<string, any> = {
+      userId: userObjectId,
+      status: 'submitted',
+    };
+    if (courseId && mongoose.isValidObjectId(courseId)) {
+      filter.courseId = new mongoose.Types.ObjectId(courseId);
+    }
+
+    const attempts = await AssessmentAttemptModel.find(filter)
+      .populate('assessmentId', 'title topic questions')
+      .sort({ submittedAt: -1 })
+      .limit(30);
+
+    interface TopicStatEntry {
+      courseId: string;
+      errorCount: number;
+      totalAttempts: number;
+      lastMissedAt: Date;
+      learningObjective?: string;
+      sourceCitations: Array<{
+        chunkId?: string;
+        materialId?: string;
+        snippet?: string;
+        confidenceScore?: number;
+      }>;
+    }
+
+    const topicStats = new Map<string, TopicStatEntry>();
+
+    for (const attempt of attempts) {
+      const assessment = attempt.assessmentId as any;
+      const questionMap = new Map<string, any>();
+      if (assessment && Array.isArray(assessment.questions)) {
+        for (const q of assessment.questions) {
+          questionMap.set(q.id || String(q._id), q);
+        }
+      }
+
+      for (const resp of attempt.responses || []) {
+        const qMeta = questionMap.get(resp.questionId);
+        const topic = qMeta?.topic || assessment?.topic || 'General Concepts';
+        const current: TopicStatEntry = topicStats.get(topic) || {
+          courseId: attempt.courseId.toString(),
+          errorCount: 0,
+          totalAttempts: 0,
+          lastMissedAt: attempt.submittedAt || new Date(),
+          learningObjective: qMeta?.learningObjective,
+          sourceCitations: [],
+        };
+
+        current.totalAttempts++;
+        if (!resp.isCorrect) {
+          current.errorCount++;
+          if (attempt.submittedAt && attempt.submittedAt > current.lastMissedAt) {
+            current.lastMissedAt = attempt.submittedAt;
+          }
+          if (resp.citations && Array.isArray(resp.citations)) {
+            for (const cit of resp.citations) {
+              current.sourceCitations.push({
+                chunkId: cit.chunkId ? String(cit.chunkId) : undefined,
+                materialId: cit.materialId ? String(cit.materialId) : undefined,
+                snippet: cit.excerpt,
+                confidenceScore: cit.score,
+              });
+            }
+          }
+        }
+
+        topicStats.set(topic, current);
+      }
+    }
+
+    // Also include topics marked as needing revision from TopicMasteryModel
+    const masteryGaps = await TopicMasteryModel.find({
+      userId: userObjectId,
+      $or: [{ recommendedRevision: true }, { masteryScore: { $lt: 50 } }],
+      ...(courseId && mongoose.isValidObjectId(courseId) ? { courseId: new mongoose.Types.ObjectId(courseId) } : {}),
+    });
+
+    for (const mg of masteryGaps) {
+      if (!topicStats.has(mg.topic)) {
+        topicStats.set(mg.topic, {
+          courseId: mg.courseId.toString(),
+          errorCount: Math.max(1, (mg.attemptCount || 1) - (mg.correctCount || 0)),
+          totalAttempts: mg.attemptCount || 1,
+          lastMissedAt: mg.lastAssessedAt || new Date(),
+          sourceCitations: [],
+        });
+      }
+    }
+
+    const gaps: KnowledgeGap[] = [];
+
+    for (const [topic, stat] of topicStats.entries()) {
+      if (stat.errorCount > 0) {
+        const errorRate = Math.round((stat.errorCount / Math.max(stat.totalAttempts, 1)) * 100) / 100;
+        
+        // Find relevant materials for this course/topic to supply grounded passages
+        const materials = await MaterialModel.find({
+          courseId: new mongoose.Types.ObjectId(stat.courseId),
+          status: 'indexed',
+        }).select('_id originalName metadata');
+
+        const passages: KnowledgeGapPassage[] = [];
+
+        // Attach existing citations from missed questions
+        for (const cit of stat.sourceCitations.slice(0, 2)) {
+          const mat = materials.find((m) => m._id.toString() === cit.materialId) || materials[0];
+          passages.push({
+            chunkId: cit.chunkId || `chunk-${topic.toLowerCase().replace(/\s+/g, '-')}`,
+            materialId: mat ? mat._id.toString() : stat.courseId,
+            materialTitle: mat ? mat.originalName : `${topic} Foundation Notes`,
+            originalFilename: mat ? mat.originalName : 'Course_Curriculum.md',
+            textSnippet: cit.snippet || `Key principles covering ${topic}. Review fundamental invariants and definitions.`,
+            sourceType: 'md',
+            relevanceScore: cit.confidenceScore || 0.92,
+          });
+        }
+
+        // If no citations on questions, provide fallback passage from course materials
+        if (passages.length === 0 && materials.length > 0 && materials[0]) {
+          const mat = materials[0];
+          passages.push({
+            chunkId: `gap-${mat._id.toString()}-0`,
+            materialId: mat._id.toString(),
+            materialTitle: mat.originalName,
+            originalFilename: mat.originalName,
+            textSnippet: `Core review excerpt for topic "${topic}": consult official syllabus section and lecture notes for detailed explanations.`,
+            sourceType: 'md',
+            relevanceScore: 0.88,
+          });
+        }
+
+        gaps.push({
+          id: `gap-${topic.toLowerCase().replace(/[^a-z0-9]/g, '-')}`,
+          courseId: stat.courseId,
+          topic,
+          learningObjective: stat.learningObjective || `Master foundational principles of ${topic}`,
+          errorCount: stat.errorCount,
+          totalAttempts: stat.totalAttempts,
+          errorRate,
+          lastMissedAt: stat.lastMissedAt.toISOString(),
+          recommendedAction: `Recurring struggle identified in "${topic}" (${stat.errorCount} missed questions, ${Math.round(errorRate * 100)}% error rate). Review recommended source passages below before attempting your next quiz.`,
+          recommendedPassages: passages,
+        });
+      }
+    }
+
+    // Sort by highest error rate first
+    return gaps.sort((a, b) => b.errorRate - a.errorRate);
+  }
+
+  /**
+   * Module 13 Priority 4: Revision scheduling with Ebbinghaus forgetting-curve heuristics
+   * Calculates retention estimates and schedule review sessions.
+   */
+  async getRevisionSchedule(userId: string, courseId?: string): Promise<RevisionScheduleItem[]> {
+    const userObjectId = new mongoose.Types.ObjectId(userId);
+    const filter: Record<string, any> = {
+      userId: userObjectId,
+    };
+    if (courseId && mongoose.isValidObjectId(courseId)) {
+      filter.courseId = new mongoose.Types.ObjectId(courseId);
+    }
+
+    const masteries = await TopicMasteryModel.find(filter).populate('courseId', 'title');
+
+    for (const tm of masteries) {
+      const course = tm.courseId as any;
+      const daysSince = Math.max(
+        0.5,
+        (Date.now() - new Date(tm.lastAssessedAt).getTime()) / (1000 * 60 * 60 * 24)
+      );
+
+      // Stability S heuristic based on masteryScore (0-100) and attempts
+      const stability = Math.max(2, (tm.masteryScore / 20) * (1 + 0.25 * Math.min(tm.attemptCount || 1, 5)));
+      // Retention R = 100 * exp(-days / S)
+      const estimatedRetention = Math.min(100, Math.max(10, Math.round(100 * Math.exp(-daysSince / stability))));
+
+      // Optimal review point is when retention drops to ~75%
+      const optimalIntervalDays = Math.max(1, Math.round(-stability * Math.log(0.75)));
+      const optimalReviewDate = new Date(new Date(tm.lastAssessedAt).getTime() + optimalIntervalDays * 24 * 60 * 60 * 1000);
+
+      await RevisionScheduleModel.findOneAndUpdate(
+        {
+          userId: userObjectId,
+          courseId: course?._id || tm.courseId,
+          topic: tm.topic,
+        },
+        {
+          userId: userObjectId,
+          courseId: course?._id || tm.courseId,
+          topic: tm.topic,
+          currentMasteryScore: tm.masteryScore,
+          estimatedRetentionRate: estimatedRetention,
+          lastAssessedAt: tm.lastAssessedAt,
+          optimalReviewDate,
+          status: 'pending',
+          disclaimer:
+            'Estimated retention calculated using spaced-repetition forgetting-curve heuristics. These are heuristic guidelines to optimize revision timing, not scientifically guaranteed predictions.',
+        },
+        { upsert: true }
+      );
+    }
+
+    const schedules = await RevisionScheduleModel.find(filter)
+      .populate('courseId', 'title')
+      .sort({ optimalReviewDate: 1 });
+
+    return schedules.map((s) => {
+      const course = s.courseId as any;
+      return s.toResponse(course?.title);
+    });
+  }
+
+  /**
+   * Complete a revision schedule item and advance optimal review date
+   */
+  async completeRevisionScheduleItem(userId: string, scheduleId: string): Promise<RevisionScheduleItem> {
+    const userObjectId = new mongoose.Types.ObjectId(userId);
+    const schedule = await RevisionScheduleModel.findOne({
+      _id: new mongoose.Types.ObjectId(scheduleId),
+      userId: userObjectId,
+    }).populate('courseId', 'title');
+
+    if (!schedule) {
+      throw new Error('Revision schedule item not found');
+    }
+
+    schedule.status = 'completed';
+    schedule.lastAssessedAt = new Date();
+    schedule.estimatedRetentionRate = Math.min(100, schedule.estimatedRetentionRate + 25);
+    // Push next optimal review date forward by spaced interval (+5 days)
+    schedule.optimalReviewDate = new Date(Date.now() + 5 * 24 * 60 * 60 * 1000);
+    await schedule.save();
+
+    const course = schedule.courseId as any;
+    return schedule.toResponse(course?.title);
   }
 }
 

@@ -9,6 +9,7 @@ export interface IConversationDocument extends Document {
   mode: TutoringMode;
   academicLevel: AcademicLevel;
   explanationStyle: ExplanationStyle;
+  language?: string;
   isPinned: boolean;
   messageCount: number;
   lastMessagePreview?: string;
@@ -58,6 +59,11 @@ const ConversationSchema = new Schema<IConversationDocument>(
       enum: ['step_by_step', 'analogy', 'summary', 'revision_notes'],
       default: 'step_by_step',
     },
+    language: {
+      type: String,
+      default: 'en',
+      maxlength: 10,
+    },
     isPinned: {
       type: Boolean,
       default: false,
@@ -88,6 +94,7 @@ ConversationSchema.methods.toResponse = function (): Conversation {
     mode: this.mode,
     academicLevel: this.academicLevel,
     explanationStyle: this.explanationStyle,
+    language: this.language || 'en',
     isPinned: this.isPinned,
     messageCount: this.messageCount,
     lastMessagePreview: this.lastMessagePreview,

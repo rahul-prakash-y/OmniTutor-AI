@@ -21,7 +21,13 @@ export function createRagRoutes(deps: { ragService: RagService }): FastifyPlugin
     }>(
       '/courses/:courseId/rag/query',
       {
-        preHandler: [app.authenticate],
+        config: {
+          rateLimit: {
+            max: 30,
+            timeWindow: '1 minute',
+          },
+        },
+        preHandler: [app.authenticate, app.validateCsrf],
       },
       async (req, reply) => {
         const { courseId } = req.params;
@@ -55,7 +61,7 @@ export function createRagRoutes(deps: { ragService: RagService }): FastifyPlugin
     }>(
       '/courses/:courseId/rag/diagnostics',
       {
-        preHandler: [app.authenticate],
+        preHandler: [app.authenticate, app.validateCsrf],
       },
       async (req, reply) => {
         const { courseId } = req.params;
@@ -94,7 +100,12 @@ export function createRagRoutes(deps: { ragService: RagService }): FastifyPlugin
         const { courseId, chunkId } = req.params;
         await ragService.verifyCourseAccess(courseId, String(req.user!._id), req.user!.role);
 
-        const resolved = await ragService.resolveChunkSource(chunkId, courseId);
+        const resolved = await ragService.resolveChunkSource(
+          chunkId,
+          courseId,
+          String(req.user!._id),
+          req.user!.role
+        );
 
         return reply.status(200).send({
           success: true,
@@ -114,11 +125,16 @@ export function createRagRoutes(deps: { ragService: RagService }): FastifyPlugin
     }>(
       '/rag/citations/resolve',
       {
-        preHandler: [app.authenticate],
+        preHandler: [app.authenticate, app.validateCsrf],
       },
       async (req, reply) => {
         const parsed = resolveCitationSchema.parse(req.body);
-        const resolved = await ragService.resolveChunkSource(parsed.chunkId);
+        const resolved = await ragService.resolveChunkSource(
+          parsed.chunkId,
+          undefined,
+          String(req.user!._id),
+          req.user!.role
+        );
 
         return reply.status(200).send({
           success: true,

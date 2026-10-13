@@ -30,7 +30,6 @@ export class QdrantService implements IVectorService {
         latencyMs,
         message: `Qdrant vector store online (${collections.collections.length} collections)`,
         details: {
-          url: this.url,
           collectionCount: collections.collections.length,
         },
       };
@@ -43,7 +42,6 @@ export class QdrantService implements IVectorService {
         status: 'degraded',
         latencyMs,
         message: `Qdrant vector store unavailable: ${message}. Vector search is disabled until Qdrant is started.`,
-        details: { url: this.url },
       };
     }
   }

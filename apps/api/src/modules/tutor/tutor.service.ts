@@ -9,6 +9,8 @@ import type {
   ConceptNote,
   AcademicLevel,
   ExplanationStyle,
+  SynthesizeSpeechDto,
+  SpeechSynthesisResult,
 } from '@omnitutor/shared';
 import {
   ConversationModel,
@@ -57,6 +59,7 @@ export class TutorService {
       mode: dto.mode || 'socratic',
       academicLevel: dto.academicLevel || 'intermediate',
       explanationStyle: dto.explanationStyle || 'step_by_step',
+      language: dto.language || 'en',
       isPinned: false,
       messageCount: 0,
     });
@@ -141,6 +144,7 @@ export class TutorService {
     if (dto.mode !== undefined) conv.mode = dto.mode;
     if (dto.academicLevel !== undefined) conv.academicLevel = dto.academicLevel;
     if (dto.explanationStyle !== undefined) conv.explanationStyle = dto.explanationStyle;
+    if (dto.language !== undefined) conv.language = dto.language;
 
     await conv.save();
     return conv.toResponse();
@@ -248,11 +252,20 @@ export class TutorService {
     // 3. Formulate query using RAG engine
     const effectiveAcademicLevel = dto.academicLevel || conv.academicLevel;
     const effectiveExplanationStyle = dto.explanationStyle || conv.explanationStyle;
+    const effectiveLanguage = dto.language || conv.language || 'en';
     const effectiveMaterialId = dto.materialId || (conv.materialId ? conv.materialId.toString() : undefined);
 
     // Build pedagogical instruction modifiers
     let styleGuide = '';
-    if (conv.mode === 'socratic' || dto.requestHint) {
+    if (dto.socraticStep === 'probe') {
+      styleGuide = 'Socratic Probing Question: Do NOT provide the answer or complete explanation yet. Pose a focused, thought-provoking guiding question to test the student foundational intuition.';
+    } else if (dto.socraticStep === 'hint' || dto.requestHint) {
+      styleGuide = 'Socratic Hint: Provide a focused, sequential hint pointing toward the underlying principle without giving away the final resolution.';
+    } else if (dto.socraticStep === 'synthesize') {
+      styleGuide = 'Conceptual Synthesis: Prompt the student to connect their partial observation with the governing rule or invariant.';
+    } else if (dto.socraticStep === 'explain') {
+      styleGuide = 'Full Grounded Explanation: Now provide the complete, rigorous grounded explanation citing all supporting evidence with [cite:N] badges.';
+    } else if (conv.mode === 'socratic') {
       styleGuide = 'Use the Socratic method: guide the student with targeted questions or sequential hints. Do not simply hand over the complete answer immediately.';
     } else if (effectiveExplanationStyle === 'step_by_step') {
       styleGuide = 'Provide a structured, step-by-step breakdown of the concept.';
@@ -264,10 +277,16 @@ export class TutorService {
       styleGuide = 'Format the explanation as bulleted revision notes with bold key terms and actionable memory cues.';
     }
 
+    // Multilingual instructions preserving citations
+    let languageGuide = '';
+    if (effectiveLanguage && effectiveLanguage !== 'en') {
+      languageGuide = ` Explain the concepts fluently in language "${effectiveLanguage}". CRITICAL CITATION REQUIREMENT: Preserve all citation tags [cite:N] pointing to the retrieved course material exactly as formatted without translating citation markers or altering chunk IDs.`;
+    }
+
     const historyContext = historyReversed.length > 0
       ? `Prior conversation:\n${historyReversed.map((m) => `${m.role === 'user' ? 'Student' : 'Tutor'}: ${m.content}`).join('\n')}\n\nStudent question: `
       : '';
-    const ragQuery = `${historyContext}${dto.content}${styleGuide ? ` [Instruction: ${styleGuide}]` : ''}`;
+    const ragQuery = `${historyContext}${dto.content}${styleGuide || languageGuide ? ` [Instruction: ${styleGuide}${languageGuide}]` : ''}`;
 
     // Execute grounded RAG query
     const ragResult = await this.ragService.executeQuery(
@@ -296,7 +315,9 @@ export class TutorService {
         conflictDetected: ragResult.hasConflict,
         tokensUsed: ragResult.tokensUsed.totalTokens,
         durationMs: ragResult.durationMs,
-        isHint: dto.requestHint,
+        isHint: dto.requestHint || dto.socraticStep === 'hint',
+        socraticStep: dto.socraticStep || (conv.mode === 'socratic' ? 'probe' : 'explain'),
+        language: effectiveLanguage,
       },
     });
 
@@ -306,6 +327,28 @@ export class TutorService {
     await conv.save();
 
     return assistantMsg.toResponse();
+  }
+
+  /**
+   * Module 13 Priority 6: Voice-based tutoring speech synthesis metadata
+   */
+  public async synthesizeSpeech(dto: SynthesizeSpeechDto): Promise<SpeechSynthesisResult> {
+    const wordCount = dto.text.trim().split(/\s+/).length;
+    const speed = dto.speed || 1.0;
+    const durationEstimateMs = Math.round((wordCount / (150 * speed)) * 60 * 1000);
+
+    return {
+      text: dto.text,
+      language: dto.language || 'en',
+      speed,
+      status: 'synthesized',
+      durationEstimateMs,
+      webSpeechUtterance: {
+        lang: dto.language || 'en',
+        rate: speed,
+        pitch: 1.0,
+      },
+    };
   }
 
   /**

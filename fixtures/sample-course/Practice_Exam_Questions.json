@@ -1,0 +1,62 @@
+{
+  "topic": "Distributed Consensus and Logical Time",
+  "difficulty": "intermediate",
+  "questions": [
+    {
+      "id": "q-dist-01",
+      "type": "multiple_choice",
+      "topic": "Consensus Foundations",
+      "learningObjective": "Analyze FLP Impossibility implications",
+      "difficulty": "intermediate",
+      "prompt": "According to the FLP Impossibility Theorem (Fischer, Lynch, Paterson, 1985), why is deterministic consensus impossible in a purely asynchronous system?",
+      "options": [
+        "Network latency is strictly bounded, creating clock drift",
+        "It cannot guarantee both safety and liveness in the presence of even a single unannounced crash failure",
+        "Byzantine nodes can forge cryptographic digital signatures",
+        "Three-phase commit requires a centralized coordinator"
+      ],
+      "correctAnswer": 1,
+      "explanation": "FLP proves that in a purely asynchronous network, no deterministic protocol can guarantee both safety and liveness if even one node may suffer an unannounced crash failure.",
+      "points": 10
+    },
+    {
+      "id": "q-dist-02",
+      "type": "multiple_choice",
+      "topic": "Raft Protocol",
+      "learningObjective": "State commit conditions in Raft",
+      "difficulty": "intermediate",
+      "prompt": "In the Raft consensus algorithm, when is a log entry considered safely committed by the leader?",
+      "options": [
+        "Immediately when written to the leader's local write-ahead disk log",
+        "When all cluster nodes reply with AppendEntries confirmation",
+        "When the entry created by the current leader has been replicated on a majority of servers",
+        "After the randomized election timeout has expired without a candidate split"
+      ],
+      "correctAnswer": 2,
+      "explanation": "In Raft, a leader commits an entry from its current term once it has successfully replicated that entry on a majority (quorum) of cluster nodes.",
+      "points": 10
+    },
+    {
+      "id": "q-dist-03",
+      "type": "true_false",
+      "topic": "Logical Time",
+      "learningObjective": "Differentiate Lamport clocks from Vector clocks",
+      "difficulty": "beginner",
+      "prompt": "If Lamport timestamps for two events satisfy L(a) < L(b), this proves event a causally preceded event b (a -> b).",
+      "options": ["True", "False"],
+      "correctAnswer": 1,
+      "explanation": "False. Lamport clocks guarantee that if a -> b then L(a) < L(b), but the converse does not hold. Events may be concurrent even if one has a smaller timestamp.",
+      "points": 5
+    },
+    {
+      "id": "q-dist-04",
+      "type": "short_answer",
+      "topic": "Vector Clocks",
+      "learningObjective": "Explain concurrency detection in Vector Clocks",
+      "difficulty": "advanced",
+      "prompt": "Explain how vector clocks detect that two events a and b are concurrent (a || b) rather than causally related.",
+      "rubric": "Must state that neither vector dominates the other: neither V(a) <= V(b) nor V(b) <= V(a). One coordinate is greater in a while another coordinate is greater in b.",
+      "points": 15
+    }
+  ]
+}

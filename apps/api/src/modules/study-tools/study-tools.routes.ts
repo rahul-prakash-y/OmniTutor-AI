@@ -24,7 +24,13 @@ export function createStudyToolsRoutes(deps: {
     }>(
       '/study-tools/summaries/generate',
       {
-        preHandler: [app.authenticate],
+        config: {
+          rateLimit: {
+            max: 20,
+            timeWindow: '1 minute',
+          },
+        },
+        preHandler: [app.authenticate, app.validateCsrf],
       },
       async (req, reply) => {
         const parsed = groundedSummarySchema.parse(req.body);
@@ -52,7 +58,13 @@ export function createStudyToolsRoutes(deps: {
     }>(
       '/study-tools/flashcards/generate',
       {
-        preHandler: [app.authenticate],
+        config: {
+          rateLimit: {
+            max: 20,
+            timeWindow: '1 minute',
+          },
+        },
+        preHandler: [app.authenticate, app.validateCsrf],
       },
       async (req, reply) => {
         const parsed = groundedFlashcardsSchema.parse(req.body);
@@ -106,7 +118,7 @@ export function createStudyToolsRoutes(deps: {
     }>(
       '/study-tools/notes',
       {
-        preHandler: [app.authenticate],
+        preHandler: [app.authenticate, app.validateCsrf],
       },
       async (req, reply) => {
         const parsed = createStudyNoteSchema.parse(req.body);
@@ -134,7 +146,7 @@ export function createStudyToolsRoutes(deps: {
     }>(
       '/study-tools/notes/:id',
       {
-        preHandler: [app.authenticate],
+        preHandler: [app.authenticate, app.validateCsrf],
       },
       async (req, reply) => {
         const parsed = updateStudyNoteSchema.parse(req.body);
@@ -162,7 +174,7 @@ export function createStudyToolsRoutes(deps: {
     }>(
       '/study-tools/notes/:id',
       {
-        preHandler: [app.authenticate],
+        preHandler: [app.authenticate, app.validateCsrf],
       },
       async (req, reply) => {
         const deleted = await studyToolsService.deleteNote(

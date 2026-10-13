@@ -1,0 +1,64 @@
+name: CI / Automated Quality & Security Gate
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+jobs:
+  validate:
+    name: Build, Lint, Typecheck & Test
+    runs-on: ubuntu-latest
+
+    services:
+      mongodb:
+        image: mongo:7.0
+        ports:
+          - 27017:27017
+        options: >-
+          --health-cmd "mongosh --eval 'db.runCommand({ ping: 1 })'"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+      qdrant:
+        image: qdrant/qdrant:v1.13.2
+        ports:
+          - 6333:6333
+          - 6334:6334
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Dependency Vulnerability Audit
+        run: npm audit --audit-level=high
+        continue-on-error: true
+
+      - name: TypeScript Typecheck
+        run: npm run typecheck
+
+      - name: Code Linting
+        run: npm run lint
+
+      - name: Run Monorepo Test Suites
+        run: npm test
+        env:
+          NODE_ENV: test
+          MONGODB_URI: mongodb://localhost:27017/omnitutor_ci
+          QDRANT_URL: http://localhost:6333
+          SESSION_SECRET: test_session_secret_for_ci_minimum_32_chars_ok!
+          CORS_ORIGIN: http://localhost:5173
+
+      - name: Production Build
+        run: npm run build

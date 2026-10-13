@@ -217,6 +217,25 @@ export class IngestionWorker {
     this.queue.emitJobUpdate(job.toResponse());
   }
 
+  private isPermanentFailure(errorMessage: string): boolean {
+    const permanentPatterns = [
+      /document not found/i,
+      /not found in storage/i,
+      /no processing adapter found/i,
+      /zero valid content chunks/i,
+      /insufficient text layer/i,
+      /scanned pdf/i,
+      /decompression bomb/i,
+      /zip slip/i,
+      /invalid.*archive structure/i,
+      /unrecognized file signature/i,
+      /unsupported format/i,
+      /binary characters or null bytes/i,
+      /exceeds maximum allowed size/i,
+    ];
+    return permanentPatterns.some((pattern) => pattern.test(errorMessage));
+  }
+
   private async markJobFailed(
     job: any,
     errorMessage: string,
@@ -241,12 +260,15 @@ export class IngestionWorker {
       await course.save();
     }
 
-    if (job.attempts < job.maxAttempts) {
-      // Schedule backoff retry
-      const delayMs = Math.pow(2, job.attempts) * 1000;
+    const isPermanent = this.isPermanentFailure(errorMessage);
+
+    // Only retry transient errors; do NOT retry permanent validation failures
+    if (!isPermanent && job.attempts < job.maxAttempts) {
+      // Schedule bounded backoff retry (capped at 10s)
+      const delayMs = Math.min(Math.pow(2, job.attempts) * 1000, 10000);
       logger.warn(
         { jobId: job._id, attempt: job.attempts, maxAttempts: job.maxAttempts, delayMs },
-        'Scheduling retry with exponential backoff'
+        'Scheduling transient error retry with bounded exponential backoff'
       );
       job.status = 'queued';
       job.stage = 'validation';
@@ -258,11 +280,79 @@ export class IngestionWorker {
         this.queue.enqueue(job._id.toString());
       }, delayMs);
     } else {
+      if (isPermanent) {
+        logger.info(
+          { jobId: job._id, error: errorMessage },
+          'Permanent validation failure detected. Skipping retry.'
+        );
+      }
       job.status = 'failed';
       job.stage = 'failed';
       job.completedAt = new Date();
       await job.save();
       this.queue.emitJobUpdate(job.toResponse());
+    }
+  }
+
+  /**
+   * Reconcile orphaned ingestion records and stale vectors after server restart
+   */
+  public async reconcileOrphanedJobs(): Promise<void> {
+    try {
+      const orphanedJobs = await IngestionJobModel.find({
+        status: { $in: ['processing', 'queued'] },
+      });
+
+      for (const job of orphanedJobs) {
+        logger.warn(
+          { jobId: job._id, status: job.status, attempts: job.attempts },
+          'Reconciling orphaned ingestion job found on startup'
+        );
+
+        if (job.attempts < job.maxAttempts) {
+          job.status = 'queued';
+          job.stage = 'validation';
+          job.progress = 0;
+          await job.save();
+          await this.queue.enqueue(job._id.toString());
+        } else {
+          job.status = 'failed';
+          job.stage = 'failed';
+          job.error = 'Job interrupted by server shutdown and reached attempt limit';
+          job.completedAt = new Date();
+          await job.save();
+
+          await MaterialModel.findByIdAndUpdate(job.materialId, {
+            status: 'failed',
+            errorMessage: job.error,
+          });
+
+          // Clean up stale Qdrant points for this failed material
+          await this.vectors.deletePointsByFilter(MATERIALS_COLLECTION, {
+            materialId: job.materialId.toString(),
+          });
+        }
+      }
+
+      // Reconcile courses stuck in processing state
+      const stuckCourses = await CourseModel.find({ processingStatus: 'processing' });
+      for (const course of stuckCourses) {
+        const hasActiveJobs = await IngestionJobModel.exists({
+          courseId: course._id,
+          status: { $in: ['queued', 'processing'] },
+        });
+
+        if (!hasActiveJobs) {
+          const hasIndexed = await MaterialModel.exists({
+            courseId: course._id,
+            status: 'indexed',
+          });
+          course.processingStatus = hasIndexed ? 'indexed' : 'idle';
+          await course.save();
+        }
+      }
+    } catch (err) {
+      logger.warn({ err }, 'Warning during orphaned ingestion job reconciliation');
     }
   }
 }

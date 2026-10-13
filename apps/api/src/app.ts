@@ -49,6 +49,8 @@ import { MaterialViewerService } from './modules/material-viewer/material-viewer
 import { createMaterialViewerRoutes } from './modules/material-viewer/material-viewer.routes.js';
 import { StudyToolsService } from './modules/study-tools/study-tools.service.js';
 import { createStudyToolsRoutes } from './modules/study-tools/study-tools.routes.js';
+import { AIEvalService } from './modules/ai-eval/ai-eval.service.js';
+import { createAIEvalRoutes } from './modules/ai-eval/ai-eval.routes.js';
 
 
 export interface AppOptions {
@@ -130,7 +132,7 @@ export function createApp(options?: AppOptions) {
 
   // Ingestion Queue and Worker
   const queueService = options?.queueService || new IngestionQueueService(2);
-  new IngestionWorker({
+  const ingestionWorker = new IngestionWorker({
     storage: storageService,
     embeddings: embeddingProvider,
     vectors: vectorService,
@@ -138,8 +140,15 @@ export function createApp(options?: AppOptions) {
     geminiApiKey: env.GEMINI_API_KEY,
   });
 
-  // Start background worker loop
-  queueService.start();
+  // Start background worker loop if queue is internally created
+  if (!options?.queueService) {
+    queueService.start();
+  }
+
+  // Reconcile any orphaned ingestion records from unexpected restarts
+  if (!options?.queueService && env.NODE_ENV !== 'test') {
+    void ingestionWorker.reconcileOrphanedJobs();
+  }
 
   const aiProvider = options?.aiProvider || getAIProvider();
 
@@ -215,6 +224,10 @@ export function createApp(options?: AppOptions) {
   app.register(createSearchRoutes({ searchService }), { prefix: '/api/v1' });
   app.register(createMaterialViewerRoutes({ materialViewerService }), { prefix: '/api/v1' });
   app.register(createStudyToolsRoutes({ studyToolsService }), { prefix: '/api/v1' });
+
+  // Module 13 Priority 8: AI Evaluation Benchmark & Groundedness Dashboard
+  const aiEvalService = new AIEvalService({ ragService, aiProvider });
+  app.register(createAIEvalRoutes({ aiEvalService }), { prefix: '/api/v1' });
 
 
   // Root health probe convenience route

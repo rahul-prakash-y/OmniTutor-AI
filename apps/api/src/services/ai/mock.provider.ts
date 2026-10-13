@@ -41,6 +41,10 @@ export class MockAIProvider implements IAIProvider {
     this.customResponse = response;
   }
 
+  public setResponse(response: string): void {
+    this.customResponse = response;
+  }
+
   public setShouldFail(fail: boolean): void {
     this.shouldFail = fail;
   }

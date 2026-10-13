@@ -123,3 +123,24 @@ export interface MaterialChunk {
   text: string;
   metadata: ChunkProvenance;
 }
+
+export interface LearningObjective {
+  id: string;
+  courseId: string;
+  code: string;
+  title: string;
+  description: string;
+  topic: string;
+  materialIds?: string[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface LearningObjectiveCoverage {
+  objective: LearningObjective;
+  mappedQuestionsCount: number;
+  mappedMaterialsCount: number;
+  estimatedMastery: number;
+  coverageStatus: 'uncovered' | 'partial' | 'fully_covered';
+}
+

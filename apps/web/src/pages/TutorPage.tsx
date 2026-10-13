@@ -16,6 +16,7 @@ import type {
   AcademicLevel,
   ExplanationStyle,
   ConceptNote,
+  SocraticStep,
 } from '@omnitutor/shared';
 import {
   Bot,
@@ -35,6 +36,11 @@ import {
   Search,
   Square,
   Compass,
+  Mic,
+  MicOff,
+  Volume2,
+  VolumeX,
+  Globe,
 } from 'lucide-react';
 
 export const TutorPage: React.FC = () => {
@@ -53,6 +59,14 @@ export const TutorPage: React.FC = () => {
   const [mode, setMode] = useState<TutoringMode>('socratic');
   const [academicLevel, setAcademicLevel] = useState<AcademicLevel>('intermediate');
   const [explanationStyle, setExplanationStyle] = useState<ExplanationStyle>('step_by_step');
+  const [language, setLanguage] = useState<string>('en');
+  const [socraticStep, setSocraticStep] = useState<SocraticStep>('auto');
+
+  // Voice Input (STT) & Speech Synthesis (TTS)
+  const [isListening, setIsListening] = useState(false);
+  const [playingMessageId, setPlayingMessageId] = useState<string | null>(null);
+  const [speechSpeed, setSpeechSpeed] = useState<number>(1.0);
+  const recognitionRef = useRef<any>(null);
 
   // Messages state
   const [messages, setMessages] = useState<ConversationMessage[]>([]);
@@ -185,6 +199,7 @@ export const TutorPage: React.FC = () => {
         mode,
         academicLevel,
         explanationStyle,
+        language,
       });
 
       if (res.success && res.data) {
@@ -235,8 +250,148 @@ export const TutorPage: React.FC = () => {
     }
   };
 
+  // Clean up speech synthesis & recognition on unmount
+  useEffect(() => {
+    return () => {
+      if (recognitionRef.current) {
+        recognitionRef.current.stop();
+      }
+      if ('speechSynthesis' in window) {
+        window.speechSynthesis.cancel();
+      }
+    };
+  }, []);
+
+  // Voice Speech-to-Text handler with explicit permissions
+  const handleToggleVoiceInput = () => {
+    const SpeechRecognition =
+      (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+
+    if (!SpeechRecognition) {
+      toast.error('Web Speech Recognition is not supported in this browser. Please use Chrome or Edge.', 'Voice Input');
+      return;
+    }
+
+    if (isListening) {
+      recognitionRef.current?.stop();
+      setIsListening(false);
+      return;
+    }
+
+    try {
+      const recognition = new SpeechRecognition();
+      recognition.continuous = false;
+      recognition.interimResults = true;
+      recognition.lang =
+        language === 'es'
+          ? 'es-ES'
+          : language === 'fr'
+          ? 'fr-FR'
+          : language === 'de'
+          ? 'de-DE'
+          : language === 'hi'
+          ? 'hi-IN'
+          : language === 'ja'
+          ? 'ja-JP'
+          : language === 'zh'
+          ? 'zh-CN'
+          : 'en-US';
+
+      recognition.onstart = () => {
+        setIsListening(true);
+        toast.info('Microphone active. Speak your question...', 'Listening');
+      };
+
+      recognition.onresult = (event: any) => {
+        let transcript = '';
+        for (let i = event.resultIndex; i < event.results.length; i++) {
+          transcript += event.results[i][0].transcript;
+        }
+        if (transcript) {
+          setInputVal((prev) => (prev ? `${prev} ${transcript}` : transcript));
+        }
+      };
+
+      recognition.onerror = (event: any) => {
+        setIsListening(false);
+        if (event.error === 'not-allowed') {
+          toast.error('Microphone access was denied. Please grant microphone permissions in browser settings.', 'Microphone Blocked');
+        } else if (event.error !== 'no-speech') {
+          toast.error(`Voice recognition error: ${event.error}`, 'Voice Error');
+        }
+      };
+
+      recognition.onend = () => {
+        setIsListening(false);
+      };
+
+      recognitionRef.current = recognition;
+      recognition.start();
+    } catch {
+      setIsListening(false);
+      toast.error('Could not initialize microphone.', 'Voice Error');
+    }
+  };
+
+  // Text-to-Speech (TTS) handler with provider fallback
+  const handleToggleSpeak = async (messageId: string, text: string) => {
+    if (playingMessageId === messageId) {
+      window.speechSynthesis?.cancel();
+      setPlayingMessageId(null);
+      return;
+    }
+
+    window.speechSynthesis?.cancel();
+
+    if ('speechSynthesis' in window) {
+      try {
+        await apiClient.synthesizeSpeech({
+          text: text.slice(0, 300),
+          language,
+          speed: speechSpeed,
+        });
+      } catch {
+        // Fallback to client synthesis
+      }
+
+      const cleanText = text.replace(/\[cite:\d+\]/g, '').replace(/[#*`_]/g, '');
+      const utterance = new SpeechSynthesisUtterance(cleanText);
+      utterance.rate = speechSpeed;
+      utterance.lang =
+        language === 'es'
+          ? 'es-ES'
+          : language === 'fr'
+          ? 'fr-FR'
+          : language === 'de'
+          ? 'de-DE'
+          : language === 'hi'
+          ? 'hi-IN'
+          : language === 'ja'
+          ? 'ja-JP'
+          : language === 'zh'
+          ? 'zh-CN'
+          : 'en-US';
+
+      utterance.onend = () => {
+        setPlayingMessageId(null);
+      };
+      utterance.onerror = () => {
+        setPlayingMessageId(null);
+      };
+
+      setPlayingMessageId(messageId);
+      window.speechSynthesis.speak(utterance);
+    } else {
+      toast.info('Text-to-speech is not supported by your browser.', 'TTS Unavailable');
+    }
+  };
+
   // Send message
-  const handleSendMessage = async (textToSend?: string, requestHint = false) => {
+  const handleSendMessage = async (
+    textToSend?: string,
+    requestHint = false,
+    overrideStep?: SocraticStep
+  ) => {
     const text = textToSend || inputVal;
     if (!text.trim() || isGenerating) return;
 
@@ -253,6 +408,7 @@ export const TutorPage: React.FC = () => {
         mode,
         academicLevel,
         explanationStyle,
+        language,
       });
       if (res.success && res.data) {
         const newConv = res.data;
@@ -283,11 +439,17 @@ export const TutorPage: React.FC = () => {
     abortControllerRef.current = new AbortController();
 
     try {
+      const activeStep =
+        overrideStep ||
+        (requestHint ? 'hint' : socraticStep !== 'auto' ? socraticStep : undefined);
+
       const res = await apiClient.sendConversationMessage(convId, {
         content: text.trim(),
         academicLevel,
         explanationStyle,
         requestHint,
+        language: language !== 'en' ? language : undefined,
+        socraticStep: activeStep,
       });
 
       if (res.success && res.data) {
@@ -621,6 +783,42 @@ export const TutorPage: React.FC = () => {
                   <option value="revision_notes">Revision Notes</option>
                 </select>
               </div>
+
+              <div>
+                <span className="text-[10px] uppercase font-bold text-slate-400 block mb-1">
+                  Tutoring Language
+                </span>
+                <select
+                  value={language}
+                  onChange={(e) => setLanguage(e.target.value)}
+                  className="w-full px-2 py-1 rounded text-[11px] bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300"
+                >
+                  <option value="en">English (Original citations)</option>
+                  <option value="es">Español (Spanish)</option>
+                  <option value="fr">Français (French)</option>
+                  <option value="de">Deutsch (German)</option>
+                  <option value="hi">हिंदी (Hindi)</option>
+                  <option value="ja">日本語 (Japanese)</option>
+                  <option value="zh">中文 (Chinese)</option>
+                </select>
+              </div>
+
+              <div>
+                <span className="text-[10px] uppercase font-bold text-slate-400 block mb-1">
+                  Socratic Step Strategy
+                </span>
+                <select
+                  value={socraticStep}
+                  onChange={(e) => setSocraticStep(e.target.value as SocraticStep)}
+                  className="w-full px-2 py-1 rounded text-[11px] bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300"
+                >
+                  <option value="auto">Adaptive (Paced Guidance)</option>
+                  <option value="probe">Guide with Probing Question</option>
+                  <option value="hint">Progressive Hint Only</option>
+                  <option value="synthesize">Synthesize Student Idea</option>
+                  <option value="explain">Full Grounded Explanation</option>
+                </select>
+              </div>
             </div>
 
             {/* Conversation Search */}
@@ -751,6 +949,36 @@ export const TutorPage: React.FC = () => {
                           : 'bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-slate-800 dark:text-slate-200 shadow-xs'
                       }`}
                     >
+                      {!isUser && msg.metadata && (
+                        <div className="flex flex-wrap items-center gap-1.5 mb-2">
+                          {msg.metadata.socraticStep === 'probe' && (
+                            <Badge variant="brand" className="text-[10px] gap-1">
+                              <Lightbulb className="w-3 h-3" /> Guiding Question
+                            </Badge>
+                          )}
+                          {msg.metadata.socraticStep === 'hint' && (
+                            <Badge variant="warning" className="text-[10px] gap-1">
+                              <Sparkles className="w-3 h-3" /> Progressive Hint
+                            </Badge>
+                          )}
+                          {msg.metadata.socraticStep === 'synthesize' && (
+                            <Badge variant="neutral" className="text-[10px] gap-1">
+                              <Layers className="w-3 h-3" /> Step Synthesis
+                            </Badge>
+                          )}
+                          {msg.metadata.socraticStep === 'explain' && (
+                            <Badge variant="success" className="text-[10px] gap-1">
+                              <BookOpen className="w-3 h-3" /> Full Explanation
+                            </Badge>
+                          )}
+                          {msg.metadata.language && msg.metadata.language !== 'en' && (
+                            <Badge variant="neutral" className="text-[10px] gap-1">
+                              <Globe className="w-3 h-3" /> {msg.metadata.language.toUpperCase()}
+                            </Badge>
+                          )}
+                        </div>
+                      )}
+
                       {isUser ? (
                         <div className="text-sm whitespace-pre-wrap leading-relaxed">{msg.content}</div>
                       ) : (
@@ -779,6 +1007,34 @@ export const TutorPage: React.FC = () => {
                             >
                               <Bookmark className="w-3 h-3" /> Save Note
                             </button>
+                            <button
+                              type="button"
+                              onClick={() => handleToggleSpeak(msg.id, msg.content)}
+                              aria-label={playingMessageId === msg.id ? 'Stop audio' : 'Listen to explanation'}
+                              className={`hover:text-indigo-600 dark:hover:text-indigo-400 flex items-center gap-1 transition-colors ${
+                                playingMessageId === msg.id ? 'text-indigo-600 dark:text-indigo-400 font-semibold' : ''
+                              }`}
+                            >
+                              {playingMessageId === msg.id ? (
+                                <>
+                                  <VolumeX className="w-3 h-3 animate-pulse text-indigo-500" /> Stop
+                                </>
+                              ) : (
+                                <>
+                                  <Volume2 className="w-3 h-3" /> Listen
+                                </>
+                              )}
+                            </button>
+                            {playingMessageId === msg.id && (
+                              <button
+                                type="button"
+                                onClick={() => setSpeechSpeed((s) => (s === 1.0 ? 1.25 : 1.0))}
+                                className="text-[10px] px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-mono"
+                                title="Speech Rate"
+                              >
+                                {speechSpeed}x
+                              </button>
+                            )}
                           </div>
 
                           <button
@@ -831,31 +1087,55 @@ export const TutorPage: React.FC = () => {
             <div className="px-4 py-2 border-t border-slate-100 dark:border-slate-800 flex items-center gap-1.5 overflow-x-auto text-xs bg-slate-50/50 dark:bg-slate-950/40">
               <button
                 type="button"
-                onClick={() => handleSendMessage('Can you give me a progressive hint on this concept without revealing the final answer?', true)}
+                onClick={() =>
+                  handleSendMessage(
+                    inputVal.trim() ? inputVal.trim() : 'Ask me a guiding question on this concept',
+                    false,
+                    'probe'
+                  )
+                }
                 className="px-2.5 py-1 rounded-full bg-amber-50 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800 hover:bg-amber-100 font-medium shrink-0 flex items-center gap-1 transition-colors"
               >
-                <Lightbulb className="w-3 h-3" /> Progressive Hint
+                <Lightbulb className="w-3 h-3" /> Guiding Question
               </button>
               <button
                 type="button"
-                onClick={() => handleSendMessage('Could you explain this using an intuitive real-world analogy?')}
+                onClick={() =>
+                  handleSendMessage(
+                    inputVal.trim() ? inputVal.trim() : 'Can you give me a progressive hint without revealing the answer?',
+                    true,
+                    'hint'
+                  )
+                }
+                className="px-2.5 py-1 rounded-full bg-amber-50 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800 hover:bg-amber-100 font-medium shrink-0 flex items-center gap-1 transition-colors"
+              >
+                <Sparkles className="w-3 h-3" /> Progressive Hint
+              </button>
+              <button
+                type="button"
+                onClick={() =>
+                  handleSendMessage(
+                    inputVal.trim() ? inputVal.trim() : 'What is the next logical step to solve this?',
+                    false,
+                    'synthesize'
+                  )
+                }
                 className="px-2.5 py-1 rounded-full bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 hover:bg-indigo-100 font-medium shrink-0 flex items-center gap-1 transition-colors"
               >
-                <Sparkles className="w-3 h-3" /> Explain with Analogy
+                <Layers className="w-3 h-3" /> Next Step
               </button>
               <button
                 type="button"
-                onClick={() => handleSendMessage('Please provide a step-by-step breakdown of how this works.')}
+                onClick={() =>
+                  handleSendMessage(
+                    inputVal.trim() ? inputVal.trim() : 'Please provide a full grounded explanation',
+                    false,
+                    'explain'
+                  )
+                }
                 className="px-2.5 py-1 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200 font-medium shrink-0 flex items-center gap-1 transition-colors"
               >
-                <Layers className="w-3 h-3" /> Step-by-Step
-              </button>
-              <button
-                type="button"
-                onClick={() => handleSendMessage('Summarize this into bulleted revision notes for exam preparation.')}
-                className="px-2.5 py-1 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200 font-medium shrink-0 flex items-center gap-1 transition-colors"
-              >
-                <Bookmark className="w-3 h-3" /> Revision Notes
+                <BookOpen className="w-3 h-3" /> Full Explanation
               </button>
             </div>
 
@@ -867,10 +1147,27 @@ export const TutorPage: React.FC = () => {
               }}
               className="p-3 border-t border-slate-200 dark:border-slate-800 flex items-center gap-2 bg-white dark:bg-slate-900"
             >
+              <button
+                type="button"
+                onClick={handleToggleVoiceInput}
+                aria-label="Toggle voice input microphone"
+                aria-pressed={isListening}
+                title={isListening ? 'Listening... click to stop' : 'Speak your question using microphone'}
+                className={`p-2.5 rounded-xl border transition-all flex items-center justify-center shrink-0 ${
+                  isListening
+                    ? 'bg-rose-500 text-white border-rose-600 animate-pulse ring-2 ring-rose-400'
+                    : 'bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:text-indigo-600 hover:border-indigo-400'
+                }`}
+              >
+                {isListening ? <MicOff className="w-4 h-4" /> : <Mic className="w-4 h-4" />}
+              </button>
+
               <input
                 type="text"
                 placeholder={
-                  selectedCourseId
+                  isListening
+                    ? 'Listening to speech...'
+                    : selectedCourseId
                     ? `Ask anything about ${selectedCourse?.title || 'the curriculum'}...`
                     : 'Select a course to ask questions...'
                 }

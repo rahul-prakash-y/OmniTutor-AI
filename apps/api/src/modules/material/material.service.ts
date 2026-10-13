@@ -174,6 +174,16 @@ export class MaterialService {
       throw new NotFoundError('Material not found');
     }
 
+    // Prevent duplicate in-flight ingestion jobs for the same material
+    if (material.status === 'processing' || material.status === 'queued') {
+      if (material.currentJobId) {
+        const existingJob = await IngestionJobModel.findById(material.currentJobId);
+        if (existingJob && ['queued', 'processing'].includes(existingJob.status)) {
+          return existingJob.toResponse();
+        }
+      }
+    }
+
     material.status = 'queued';
     material.errorMessage = undefined;
     material.retryCount += 1;

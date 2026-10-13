@@ -64,6 +64,59 @@ export class GeminiProvider implements IAIProvider {
     }
   }
 
+  private isTransientError(err: unknown): boolean {
+    if (!err) return false;
+    const msg = String(err instanceof Error ? err.message : err).toLowerCase();
+    return (
+      msg.includes('429') ||
+      msg.includes('resource_exhausted') ||
+      msg.includes('rate limit') ||
+      msg.includes('503') ||
+      msg.includes('502') ||
+      msg.includes('500') ||
+      msg.includes('service unavailable') ||
+      msg.includes('etimedout') ||
+      msg.includes('econnreset') ||
+      msg.includes('fetch failed') ||
+      msg.includes('timed out')
+    );
+  }
+
+  private async executeWithRetry<T>(
+    fn: () => Promise<T>,
+    maxRetries = 2,
+    baseDelayMs = 600,
+    timeoutMs = 30000
+  ): Promise<T> {
+    let lastError: unknown;
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      try {
+        const timeoutPromise = new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error('Gemini request timed out after 30s')), timeoutMs)
+        );
+        return await Promise.race([fn(), timeoutPromise]);
+      } catch (err) {
+        lastError = err;
+        const transient = this.isTransientError(err);
+        if (!transient || attempt === maxRetries) {
+          throw err;
+        }
+        const jitter = Math.random() * 200;
+        const delay = Math.min(baseDelayMs * Math.pow(2, attempt) + jitter, 4000);
+        logger.warn(
+          {
+            attempt: attempt + 1,
+            delayMs: Math.round(delay),
+            error: err instanceof Error ? err.message : String(err),
+          },
+          'Transient Gemini error encountered. Retrying with bounded exponential backoff...'
+        );
+        await new Promise((resolve) => setTimeout(resolve, delay));
+      }
+    }
+    throw lastError;
+  }
+
   public async generateCompletion(
     messages: CompletionMessage[],
     options?: CompletionOptions
@@ -84,16 +137,18 @@ export class GeminiProvider implements IAIProvider {
     }));
 
     try {
-      const response = await this.client.models.generateContent({
-        model: modelName,
-        contents,
-        config: {
-          temperature: options?.temperature,
-          maxOutputTokens: options?.maxOutputTokens,
-          systemInstruction: options?.systemInstruction,
-          stopSequences: options?.stopSequences,
-        },
-      });
+      const response = await this.executeWithRetry(() =>
+        this.client!.models.generateContent({
+          model: modelName,
+          contents,
+          config: {
+            temperature: options?.temperature,
+            maxOutputTokens: options?.maxOutputTokens,
+            systemInstruction: options?.systemInstruction,
+            stopSequences: options?.stopSequences,
+          },
+        })
+      );
 
       const responseText = response.text || '';
 

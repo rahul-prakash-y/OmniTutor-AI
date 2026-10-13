@@ -24,7 +24,13 @@ export function createAssessmentRoutes(deps: {
     }>(
       '/courses/:courseId/assessments/generate',
       {
-        preHandler: [app.authenticate],
+        config: {
+          rateLimit: {
+            max: 20,
+            timeWindow: '1 minute',
+          },
+        },
+        preHandler: [app.authenticate, app.validateCsrf],
       },
       async (req, reply) => {
         const { courseId } = req.params;
@@ -121,7 +127,7 @@ export function createAssessmentRoutes(deps: {
     }>(
       '/assessments/:assessmentId/submit',
       {
-        preHandler: [app.authenticate],
+        preHandler: [app.authenticate, app.validateCsrf],
       },
       async (req, reply) => {
         const { assessmentId } = req.params;

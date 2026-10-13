@@ -19,10 +19,17 @@
     "test:api": "npm run test --workspace=@omnitutor/api",
     "test:web": "npm run test --workspace=@omnitutor/web",
     "typecheck": "npm run typecheck --workspaces --if-present",
-    "lint": "npm run lint --workspaces --if-present"
+    "lint": "npm run lint --workspaces --if-present",
+    "db:init": "npm run db:init --workspace=@omnitutor/api",
+    "seed:demo": "npm run seed:demo --workspace=@omnitutor/api"
   },
   "devDependencies": {
     "typescript": "^5.7.3"
+  },
+  "overrides": {
+    "@qdrant/js-client-rest": {
+      "undici": "7.30.0"
+    }
   },
   "engines": {
     "node": ">=20.0.0"

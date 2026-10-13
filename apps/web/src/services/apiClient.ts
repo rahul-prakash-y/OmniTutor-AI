@@ -46,6 +46,15 @@ import type {
   GroundedSummaryResponse,
   GroundedFlashcardsRequest,
   GroundedFlashcardsResponse,
+  KnowledgeGap,
+  RevisionScheduleItem,
+  LearningObjective,
+  LearningObjectiveCoverage,
+  InstructorCourseAnalytics,
+  AIEvalMetricSummary,
+  SpeechSynthesisPayload,
+  SpeechSynthesisResult,
+  CreateLearningObjectiveInput,
 } from '@omnitutor/shared';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:4000/api/v1';
@@ -735,6 +744,78 @@ export class ApiClient {
   public async deleteStudyNote(id: string): Promise<ApiResponse<{ deleted: boolean }>> {
     return this.request<{ deleted: boolean }>(`/study-tools/notes/${id}`, {
       method: 'DELETE',
+    });
+  }
+
+  // ==========================================
+  // MODULE 13: ADVANCED LEARNING FEATURES
+  // ==========================================
+
+  public async getKnowledgeGaps(courseId?: string): Promise<ApiResponse<KnowledgeGap[]>> {
+    const qs = courseId ? `?courseId=${encodeURIComponent(courseId)}` : '';
+    return this.request<KnowledgeGap[]>(`/analytics/knowledge-gaps${qs}`);
+  }
+
+  public async getRevisionSchedule(courseId?: string): Promise<ApiResponse<RevisionScheduleItem[]>> {
+    const qs = courseId ? `?courseId=${encodeURIComponent(courseId)}` : '';
+    return this.request<RevisionScheduleItem[]>(`/analytics/revision-schedule${qs}`);
+  }
+
+  public async completeRevisionScheduleItem(
+    scheduleId: string,
+    performanceRating?: number
+  ): Promise<ApiResponse<RevisionScheduleItem>> {
+    return this.request<RevisionScheduleItem>(`/analytics/revision-schedule/${scheduleId}/complete`, {
+      method: 'POST',
+      body: JSON.stringify({ performanceRating }),
+    });
+  }
+
+  public async synthesizeSpeech(
+    payload: SpeechSynthesisPayload
+  ): Promise<ApiResponse<SpeechSynthesisResult>> {
+    return this.request<SpeechSynthesisResult>('/tutor/speech/synthesize', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  public async createLearningObjective(
+    courseId: string,
+    payload: CreateLearningObjectiveInput
+  ): Promise<ApiResponse<LearningObjective>> {
+    return this.request<LearningObjective>(`/courses/${courseId}/objectives`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  public async getLearningObjectives(
+    courseId: string
+  ): Promise<ApiResponse<LearningObjective[]>> {
+    return this.request<LearningObjective[]>(`/courses/${courseId}/objectives`);
+  }
+
+  public async getLearningObjectivesCoverage(
+    courseId: string
+  ): Promise<ApiResponse<LearningObjectiveCoverage[]>> {
+    return this.request<LearningObjectiveCoverage[]>(`/courses/${courseId}/objectives/coverage`);
+  }
+
+  public async getInstructorCourseAnalytics(
+    courseId: string
+  ): Promise<ApiResponse<InstructorCourseAnalytics>> {
+    return this.request<InstructorCourseAnalytics>(`/courses/${courseId}/instructor-analytics`);
+  }
+
+  public async getAIEvalMetrics(): Promise<ApiResponse<AIEvalMetricSummary>> {
+    return this.request<AIEvalMetricSummary>('/ai-eval/metrics');
+  }
+
+  public async runAIEvalBenchmark(courseId?: string): Promise<ApiResponse<AIEvalMetricSummary>> {
+    return this.request<AIEvalMetricSummary>('/ai-eval/benchmark', {
+      method: 'POST',
+      body: JSON.stringify({ courseId: courseId || 'default-course' }),
     });
   }
 }

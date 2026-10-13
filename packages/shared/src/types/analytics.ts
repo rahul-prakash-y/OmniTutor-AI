@@ -122,3 +122,85 @@ export interface StudyPlan {
   createdAt: string;
   updatedAt: string;
 }
+
+export interface KnowledgeGapPassage {
+  chunkId: string;
+  materialId: string;
+  materialTitle: string;
+  originalFilename: string;
+  textSnippet: string;
+  sourceType: string;
+  relevanceScore: number;
+}
+
+export interface KnowledgeGap {
+  id: string;
+  courseId: string;
+  topic: string;
+  learningObjective?: string;
+  errorCount: number;
+  totalAttempts: number;
+  errorRate: number;
+  lastMissedAt: string;
+  recommendedAction: string;
+  recommendedPassages: KnowledgeGapPassage[];
+}
+
+export interface RevisionScheduleItem {
+  id: string;
+  courseId: string;
+  courseTitle?: string;
+  topic: string;
+  currentMasteryScore: number;
+  estimatedRetentionRate: number; // 0 - 100 percentage based on forgetting curve heuristic
+  lastAssessedAt: string;
+  optimalReviewDate: string;
+  urgency: 'overdue' | 'due_today' | 'due_soon' | 'upcoming';
+  status: 'pending' | 'completed';
+  disclaimer: string;
+}
+
+export interface CohortMasteryBucket {
+  range: '<50%' | '50-70%' | '70-85%' | '>85%';
+  count: number;
+  percentage: number;
+}
+
+export interface InstructorCourseAnalytics {
+  courseId: string;
+  courseTitle: string;
+  totalEnrolledStudents: number;
+  activeLearnersLast7Days: number;
+  averageCohortMastery: number;
+  overallAssessmentCompletionRate: number;
+  scoreDistribution: CohortMasteryBucket[];
+  topicMasteryRankings: Array<{
+    topic: string;
+    averageMastery: number;
+    learnerCount: number;
+    needsRevisionCount: number;
+  }>;
+  frequentlyMissedConcepts: Array<{
+    topic: string;
+    learningObjective?: string;
+    incorrectAttemptsCount: number;
+    totalAttemptsCount: number;
+    missRate: number;
+  }>;
+  privacyNotice: string;
+}
+
+export interface AIEvalMetricSummary {
+  retrievalRecallAtK: number;
+  retrievalMmr: number;
+  citationValidityRate: number;
+  groundednessScore: number;
+  quizCorrectnessAccuracy: number;
+  averageLatencyMs: number;
+  p95LatencyMs: number;
+  totalTokensProcessed: number;
+  estimatedCostUsd: number;
+  benchmarkRunsCount: number;
+  lastEvaluatedAt: string;
+}
+

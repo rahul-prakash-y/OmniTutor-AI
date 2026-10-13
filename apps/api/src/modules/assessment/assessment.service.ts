@@ -319,6 +319,31 @@ JSON SCHEMA PER QUESTION:
 
     await this.ragService.verifyCourseAccess(assessment.courseId.toString(), userId, userRole);
 
+    // Prevent duplicate rapid re-submissions (idempotent submission protection)
+    const recentDuplicate = await AssessmentAttemptModel.findOne({
+      assessmentId: assessment._id,
+      userId: new mongoose.Types.ObjectId(userId),
+      submittedAt: { $gte: new Date(Date.now() - 15000) },
+    }).sort({ submittedAt: -1 });
+
+    if (recentDuplicate) {
+      const isSameSubmission =
+        recentDuplicate.responses.length === submissions.length &&
+        submissions.every((s) =>
+          recentDuplicate.responses.some(
+            (r) => r.questionId === s.questionId && JSON.stringify(r.userAnswer) === JSON.stringify(s.userAnswer)
+          )
+        );
+
+      if (isSameSubmission) {
+        logger.info(
+          { assessmentId, userId, attemptId: recentDuplicate._id },
+          'Duplicate assessment submission intercepted; returning previous evaluated attempt'
+        );
+        return recentDuplicate.toResponse();
+      }
+    }
+
     const questionsMap = new Map<string, AssessmentQuestion>();
     assessment.questions.forEach((q) => questionsMap.set(q.id, q));
 

@@ -17,12 +17,15 @@ export interface Conversation {
   mode: TutoringMode;
   academicLevel: AcademicLevel;
   explanationStyle: ExplanationStyle;
+  language?: string;
   isPinned: boolean;
   messageCount: number;
   lastMessagePreview?: string;
   createdAt: string;
   updatedAt: string;
 }
+
+export type SocraticStep = 'probe' | 'hint' | 'synthesize' | 'explain' | 'auto';
 
 export interface TutorMessageMetadata {
   academicLevel?: AcademicLevel;
@@ -33,6 +36,9 @@ export interface TutorMessageMetadata {
   durationMs?: number;
   isClarification?: boolean;
   isHint?: boolean;
+  socraticStep?: SocraticStep;
+  language?: string;
+  speechAudioUrl?: string;
   model?: string;
 }
 
@@ -53,7 +59,28 @@ export interface SendMessagePayload {
   academicLevel?: AcademicLevel;
   explanationStyle?: ExplanationStyle;
   requestHint?: boolean;
+  socraticStep?: SocraticStep;
+  language?: string;
   materialId?: string;
+}
+
+export interface SpeechSynthesisPayload {
+  text: string;
+  language?: string;
+  speed?: number;
+}
+
+export interface SpeechSynthesisResult {
+  text: string;
+  language: string;
+  speed: number;
+  status: 'synthesized';
+  durationEstimateMs: number;
+  webSpeechUtterance: {
+    lang: string;
+    rate: number;
+    pitch: number;
+  };
 }
 
 export interface ConceptNote {

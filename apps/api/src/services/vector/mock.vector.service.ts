@@ -99,4 +99,9 @@ export class MockVectorService implements IVectorService {
   public getStoredPoints(collection: string): VectorPoint[] {
     return this.pointsMap.get(collection) || [];
   }
+
+  public clear(): void {
+    this.collections.clear();
+    this.pointsMap.clear();
+  }
 }

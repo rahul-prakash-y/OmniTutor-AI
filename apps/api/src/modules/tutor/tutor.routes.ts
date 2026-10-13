@@ -4,10 +4,12 @@ import {
   updateConversationSchema,
   sendMessageSchema,
   createConceptNoteSchema,
+  synthesizeSpeechSchema,
   type ApiResponse,
   type Conversation,
   type ConversationMessage,
   type ConceptNote,
+  type SpeechSynthesisResult,
 } from '@omnitutor/shared';
 import type { TutorService } from './tutor.service.js';
 
@@ -23,7 +25,7 @@ export function createTutorRoutes(deps: { tutorService: TutorService }): Fastify
     }>(
       '/courses/:courseId/conversations',
       {
-        preHandler: [app.authenticate],
+        preHandler: [app.authenticate, app.validateCsrf],
       },
       async (req, reply) => {
         const { courseId } = req.params;
@@ -113,7 +115,7 @@ export function createTutorRoutes(deps: { tutorService: TutorService }): Fastify
     }>(
       '/conversations/:conversationId',
       {
-        preHandler: [app.authenticate],
+        preHandler: [app.authenticate, app.validateCsrf],
       },
       async (req, reply) => {
         const { conversationId } = req.params;
@@ -144,7 +146,7 @@ export function createTutorRoutes(deps: { tutorService: TutorService }): Fastify
     }>(
       '/conversations/:conversationId',
       {
-        preHandler: [app.authenticate],
+        preHandler: [app.authenticate, app.validateCsrf],
       },
       async (req, reply) => {
         const { conversationId } = req.params;
@@ -203,7 +205,13 @@ export function createTutorRoutes(deps: { tutorService: TutorService }): Fastify
     }>(
       '/conversations/:conversationId/messages',
       {
-        preHandler: [app.authenticate],
+        config: {
+          rateLimit: {
+            max: 30,
+            timeWindow: '1 minute',
+          },
+        },
+        preHandler: [app.authenticate, app.validateCsrf],
       },
       async (req, reply) => {
         const { conversationId } = req.params;
@@ -234,7 +242,13 @@ export function createTutorRoutes(deps: { tutorService: TutorService }): Fastify
     }>(
       '/conversations/:conversationId/messages/stream',
       {
-        preHandler: [app.authenticate],
+        config: {
+          rateLimit: {
+            max: 30,
+            timeWindow: '1 minute',
+          },
+        },
+        preHandler: [app.authenticate, app.validateCsrf],
       },
       async (req, reply) => {
         const { conversationId } = req.params;
@@ -286,7 +300,7 @@ export function createTutorRoutes(deps: { tutorService: TutorService }): Fastify
     }>(
       '/conversations/:conversationId/messages/:messageId/regenerate',
       {
-        preHandler: [app.authenticate],
+        preHandler: [app.authenticate, app.validateCsrf],
       },
       async (req, reply) => {
         const { conversationId, messageId } = req.params;
@@ -317,7 +331,7 @@ export function createTutorRoutes(deps: { tutorService: TutorService }): Fastify
     }>(
       '/courses/:courseId/notes',
       {
-        preHandler: [app.authenticate],
+        preHandler: [app.authenticate, app.validateCsrf],
       },
       async (req, reply) => {
         const { courseId } = req.params;
@@ -370,7 +384,7 @@ export function createTutorRoutes(deps: { tutorService: TutorService }): Fastify
     }>(
       '/courses/:courseId/notes/:noteId',
       {
-        preHandler: [app.authenticate],
+        preHandler: [app.authenticate, app.validateCsrf],
       },
       async (req, reply) => {
         const { noteId } = req.params;
@@ -393,7 +407,7 @@ export function createTutorRoutes(deps: { tutorService: TutorService }): Fastify
     }>(
       '/notes/:noteId',
       {
-        preHandler: [app.authenticate],
+        preHandler: [app.authenticate, app.validateCsrf],
       },
       async (req, reply) => {
         const { noteId } = req.params;
@@ -402,6 +416,30 @@ export function createTutorRoutes(deps: { tutorService: TutorService }): Fastify
         return reply.status(200).send({
           success: true,
           data: { deleted: true },
+          meta: {
+            requestId: req.id,
+            timestamp: new Date().toISOString(),
+          },
+        });
+      }
+    );
+
+    // Module 13 Priority 6: Voice-based tutoring speech synthesis metadata
+    app.post<{
+      Body: unknown;
+      Reply: ApiResponse<SpeechSynthesisResult>;
+    }>(
+      '/tutor/speech/synthesize',
+      {
+        preHandler: [app.authenticate, app.validateCsrf],
+      },
+      async (req, reply) => {
+        const parsed = synthesizeSpeechSchema.parse(req.body);
+        const result = await tutorService.synthesizeSpeech(parsed);
+
+        return reply.send({
+          success: true,
+          data: result,
           meta: {
             requestId: req.id,
             timestamp: new Date().toISOString(),

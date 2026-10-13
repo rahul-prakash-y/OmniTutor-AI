@@ -13,6 +13,8 @@ import {
   type StudyGoal,
   type StudyPlan,
   type LearningEvent,
+  type KnowledgeGap,
+  type RevisionScheduleItem,
 } from '@omnitutor/shared';
 import type { AnalyticsService } from './analytics.service.js';
 
@@ -82,7 +84,7 @@ export function createAnalyticsRoutes(deps: {
     }>(
       '/analytics/events',
       {
-        preHandler: [app.authenticate],
+        preHandler: [app.authenticate, app.validateCsrf],
       },
       async (req, reply) => {
         const parsed = recordLearningEventSchema.parse(req.body);
@@ -221,7 +223,7 @@ export function createAnalyticsRoutes(deps: {
     }>(
       '/analytics/study-goals',
       {
-        preHandler: [app.authenticate],
+        preHandler: [app.authenticate, app.validateCsrf],
       },
       async (req, reply) => {
         const parsed = setStudyGoalSchema.parse(req.body);
@@ -274,7 +276,7 @@ export function createAnalyticsRoutes(deps: {
     }>(
       '/analytics/study-plan/generate',
       {
-        preHandler: [app.authenticate],
+        preHandler: [app.authenticate, app.validateCsrf],
       },
       async (req, reply) => {
         const parsed = generateStudyPlanSchema.parse(req.body);
@@ -307,7 +309,7 @@ export function createAnalyticsRoutes(deps: {
     }>(
       '/analytics/study-plan/:id/milestones/:milestoneId',
       {
-        preHandler: [app.authenticate],
+        preHandler: [app.authenticate, app.validateCsrf],
       },
       async (req, reply) => {
         const parsed = updateStudyPlanMilestoneSchema.parse(req.body);
@@ -321,6 +323,84 @@ export function createAnalyticsRoutes(deps: {
         return reply.send({
           success: true,
           data: updatedPlan,
+          meta: {
+            requestId: req.id,
+            timestamp: new Date().toISOString(),
+          },
+        });
+      }
+    );
+
+    // 12. Knowledge gap detection
+    app.get<{
+      Querystring: { courseId?: string };
+      Reply: ApiResponse<KnowledgeGap[]>;
+    }>(
+      '/analytics/knowledge-gaps',
+      {
+        preHandler: [app.authenticate],
+      },
+      async (req, reply) => {
+        const gaps = await analyticsService.detectKnowledgeGaps(
+          String(req.user!._id),
+          req.query.courseId
+        );
+
+        return reply.send({
+          success: true,
+          data: gaps,
+          meta: {
+            requestId: req.id,
+            timestamp: new Date().toISOString(),
+          },
+        });
+      }
+    );
+
+    // 13. Spaced-repetition revision schedule
+    app.get<{
+      Querystring: { courseId?: string };
+      Reply: ApiResponse<RevisionScheduleItem[]>;
+    }>(
+      '/analytics/revision-schedule',
+      {
+        preHandler: [app.authenticate],
+      },
+      async (req, reply) => {
+        const schedule = await analyticsService.getRevisionSchedule(
+          String(req.user!._id),
+          req.query.courseId
+        );
+
+        return reply.send({
+          success: true,
+          data: schedule,
+          meta: {
+            requestId: req.id,
+            timestamp: new Date().toISOString(),
+          },
+        });
+      }
+    );
+
+    // 14. Mark revision schedule item completed
+    app.post<{
+      Params: { scheduleId: string };
+      Reply: ApiResponse<RevisionScheduleItem>;
+    }>(
+      '/analytics/revision-schedule/:scheduleId/complete',
+      {
+        preHandler: [app.authenticate, app.validateCsrf],
+      },
+      async (req, reply) => {
+        const item = await analyticsService.completeRevisionScheduleItem(
+          String(req.user!._id),
+          req.params.scheduleId
+        );
+
+        return reply.send({
+          success: true,
+          data: item,
           meta: {
             requestId: req.id,
             timestamp: new Date().toISOString(),

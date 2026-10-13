@@ -13,4 +13,7 @@ export * from './learning-event.model.js';
 export * from './study-goal.model.js';
 export * from './study-plan.model.js';
 export * from './recent-material.model.js';
+export * from './learning-objective.model.js';
+export * from './revision-schedule.model.js';
+
 

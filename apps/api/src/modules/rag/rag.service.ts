@@ -9,6 +9,7 @@ import type {
 import mongoose from 'mongoose';
 import { CourseModel } from '../../database/models/course.model.js';
 import { MaterialModel } from '../../database/models/material.model.js';
+import { User } from '../../database/models/user.model.js';
 import type { IVectorService } from '../../services/vector/vector.interface.js';
 import type { IEmbeddingProvider } from '../../services/embedding/embedding.interface.js';
 import type { IAIProvider } from '../../services/ai/ai.interface.js';
@@ -85,7 +86,10 @@ export class RagService {
     if (userId && userRole !== 'admin') {
       const isOwner = course.owner.toString() === userId.toString();
       if (!isOwner) {
-        throw new ForbiddenError('You do not have authorization to access this course curriculum');
+        const ownerUser = await User.findById(course.owner).select('role');
+        if (!ownerUser || ownerUser.role !== 'admin') {
+          throw new ForbiddenError('You do not have authorization to access this course curriculum');
+        }
       }
     }
 
@@ -338,7 +342,10 @@ Please provide a clear, accurate, and structured answer grounded in the evidence
     const startTime = Date.now();
     const { courseId, materialId, topK = 10, minScore = 0.1 } = params;
 
-    await this.verifyCourseAccess(courseId, userId, userRole);
+    const course = await this.verifyCourseAccess(courseId, userId, userRole);
+    if (userRole !== 'admin' && (!userId || course.owner.toString() !== userId.toString())) {
+      throw new ForbiddenError('Retrieval diagnostics are restricted to course administrators and course owners');
+    }
 
     const { normalized, hasInjectionWarning, warnings } = this.normalizeQuery(params.query);
     const queryVector = await this.embeddingProvider.generateEmbedding(normalized);
@@ -387,9 +394,14 @@ Please provide a clear, accurate, and structured answer grounded in the evidence
   }
 
   /**
-   * Resolve chunk details from vector store and DB
+   * Resolve chunk details from vector store and DB with strict authorization checks
    */
-  public async resolveChunkSource(chunkId: string, courseId?: string): Promise<{
+  public async resolveChunkSource(
+    chunkId: string,
+    courseId?: string,
+    userId?: string,
+    userRole?: string
+  ): Promise<{
     chunk: any;
     material: any;
   }> {
@@ -406,10 +418,20 @@ Please provide a clear, accurate, and structured answer grounded in the evidence
       throw new NotFoundError(`Source chunk ${chunkId} could not be located in vector index`);
     }
 
+    const resolvedCourseId = String(point.payload?.courseId || courseId || '');
+
+    // Strict access control: verify user has permission for this course
+    if (userId && resolvedCourseId) {
+      await this.verifyCourseAccess(resolvedCourseId, userId, userRole);
+    }
+
     const materialId = point.payload?.materialId;
     let material: any = null;
     if (materialId && mongoose.isValidObjectId(materialId)) {
       material = await MaterialModel.findById(materialId);
+      if (material && userId && !resolvedCourseId) {
+        await this.verifyCourseAccess(material.courseId.toString(), userId, userRole);
+      }
     }
 
     return {

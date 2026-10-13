@@ -72,3 +72,14 @@ export const uploadLimits = {
 export type CreateCourseInput = z.infer<typeof createCourseSchema>;
 export type UpdateCourseInput = z.infer<typeof updateCourseSchema>;
 export type CourseFilterQuery = z.infer<typeof courseFilterSchema>;
+
+export const createLearningObjectiveSchema = z.object({
+  code: z.string().min(2).max(20).trim(),
+  title: z.string().min(3).max(150).trim(),
+  description: z.string().min(5).max(1000).trim(),
+  topic: z.string().min(2).max(100).trim(),
+  materialIds: z.array(z.string()).optional().default([]),
+});
+
+export type CreateLearningObjectiveInput = z.infer<typeof createLearningObjectiveSchema>;
+

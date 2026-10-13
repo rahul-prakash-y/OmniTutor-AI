@@ -48,7 +48,7 @@ export function createMaterialViewerRoutes(deps: {
     }>(
       '/materials/:id/recent',
       {
-        preHandler: [app.authenticate],
+        preHandler: [app.authenticate, app.validateCsrf],
       },
       async (req, reply) => {
         const parsed = recordRecentMaterialSchema.parse(req.body || {});
